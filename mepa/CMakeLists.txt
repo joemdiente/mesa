@@ -78,3 +78,8 @@ MEPA_LIB(LIB_NAME mepa_lan966x ADVANCED
 MEPA_LIB(LIB_NAME mepa_lmstax_lan966x ADVANCED
          DEFS     -DMEPA_HAS_LAN8814
          DRVS     mepa_drv_lan8814)
+
+#Joem: My Custom Board for VSC7514 and LAN9668
+MEPA_LIB(LIB_NAME mepa_my_own ADVANCED
+         DEFS     -DMEPA_HAS_VTSS  -DMEPA_HAS_KSZ9031  -D MEPA_HAS_LAN8814 -DMEPA_HAS_LAN884x
+         DRVS     mepa_drv_vtss    mepa_drv_ksz9031    mepa_drv_lan8814   mepa_drv_lan884x)
