@@ -35,8 +35,15 @@ typedef struct meba_board_state {
 meba_inst_t meba_initialize(size_t callouts_size, const meba_board_interface_t *callouts)
 {
     meba_inst_t         instance;
-    char                board_name[32];
     meba_board_state_t  *board;
+    
+    //Joem: For board_conf_get
+    char                board_name[32];
+    uint32_t            target = 0;
+    uint32_t            type = 10000;
+    uint32_t            board_port_cnt = 10000;
+    uint32_t            mux_mode = 0xffffffff;
+    int32_t              mep_loop_port = -1;
     
     //Joem: Greetings from MEBA
     fprintf(stdout, "Greetings from MEBA!\r\n");
@@ -50,8 +57,11 @@ meba_inst_t meba_initialize(size_t callouts_size, const meba_board_interface_t *
     
     //Joem: Get Information
     fprintf(stdout, "Getting board information\r\n");
-    callouts->conf_get("board", board_name, sizeof(board_name), NULL);
+    if(callouts->conf_get("board", board_name, sizeof(board_name), NULL) == MESA_RC_OK)
+    {
     fprintf(stdout, "Board: %s\r\n", board_name);
+    }
+    else fprintf(stdout, "Failed to get board information\r\n");
 
     //Joem: Get Target Information
 
@@ -74,19 +84,19 @@ meba_inst_t meba_initialize(size_t callouts_size, const meba_board_interface_t *
                                 sizeof(*board))) == NULL) {
             return NULL;
         }
-
     }
-    // } else if (instance->props.target == MESA_TARGET_LAN9668) {
-    //         if ((instance = meba_state_alloc(callouts,
-    //                                 "My Own LAN9668",
-    //                                 MESA_TARGET_LAN9668,
-    //                                 sizeof(*board))) == NULL) {
-    //         return NULL;
-    //     }
-    // }
+    else if (strcmp(board_name,"ung8290") == 0)  //TODO
+    {
+        if ((instance = meba_state_alloc(callouts,
+                                "My Own LAN9668",
+                                MESA_TARGET_LAN9668,
+                                sizeof(*board))) == NULL) {
+            return NULL;
+        }
+    }
     else 
     {
-        fprintf(stdout, "Failed to get board information\r\n");
+        fprintf(stdout, "Failed to Set Board\r\n");
     }
       
     // Initialize our state
