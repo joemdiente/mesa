@@ -415,6 +415,7 @@ static mesa_rc board_conf_get(const char *tag, char *buf, size_t bufsize, size_t
     uint32_t   mux_mode = 0xffffffff;
     char       name[20];
 
+    //Joem: Debug
     printf("Called function is: %s\n",__func__);
 
     // Try device-tree first
