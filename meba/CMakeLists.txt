@@ -103,7 +103,7 @@ macro(MEBA_LIB)
 endmacro()
 
 #Remove any custom source code; Just to test vanilla source
-# list(REMOVE_ITEM c_files "meba_my_own.c")
+# list(REMOVE_ITEM c_files "meba_own_board.c")
 
 MEBA_LIB(LIB_NAME caracal MEBA_SRC_FOLDER caracal
          STATIC_DEPENDENCIES    mepa_caracal)
@@ -132,7 +132,7 @@ MEBA_LIB(LIB_NAME sparx5_bringup MEBA_SRC_FOLDER sparx5
 MEBA_LIB(LIB_NAME lan966x MEBA_SRC_FOLDER lan966x
          STATIC_DEPENDENCIES    mepa_lan966x)
 
-#Joem: based on ocelot and lan9668; mepa_my_own :=../mepa/CMakeLists.txt
-MEBA_LIB(LIB_NAME my_own MEBA_SRC_FOLDER my_own
-         STATIC_DEPENDENCIES    mepa_my_own)
+#Joem: based on ocelot and lan9668; mepa_own_board :=../mepa/CMakeLists.txt
+MEBA_LIB(LIB_NAME own_board MEBA_SRC_FOLDER own_board
+         STATIC_DEPENDENCIES    mepa_own_board)
 

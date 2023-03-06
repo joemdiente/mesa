@@ -49,15 +49,15 @@ static const meba_aux_rawio_t rawio =
     }
 };
 
-static uint32_t my_own_vsc7514_capability(meba_inst_t inst, int cap)
+static uint32_t own_board_vsc7514_capability(meba_inst_t inst, int cap)
 {
 
 }
-static mesa_rc my_own_vsc7514_reset_t(meba_inst_t inst, meba_reset_point_t reset)
+static mesa_rc own_board_vsc7514_reset_t(meba_inst_t inst, meba_reset_point_t reset)
 {
 
 }
-static mesa_rc my_own_vsc7514_port_entry_get_t(meba_inst_t inst, mesa_port_no_t port_no, meba_port_entry_t *entry)
+static mesa_rc own_board_vsc7514_port_entry_get_t(meba_inst_t inst, mesa_port_no_t port_no, meba_port_entry_t *entry)
 {
 
 }
@@ -305,9 +305,9 @@ meba_inst_t meba_initialize(size_t callouts_size, const meba_board_interface_t *
 
     // Hook up board API functions
     printf("Hooking up board API\r\n");
-    instance->api.meba_capability                 = my_own_vsc7514_capability;
-    instance->api.meba_port_entry_get             = my_own_vsc7514_port_entry_get_t;
-    instance->api.meba_reset                      = my_own_vsc7514_reset_t;
+    instance->api.meba_capability                 = own_board_vsc7514_capability;
+    instance->api.meba_port_entry_get             = own_board_vsc7514_port_entry_get_t;
+    instance->api.meba_reset                      = own_board_vsc7514_reset_t;
     instance->api.meba_sensor_get                 = NULL;
     instance->api.meba_sfp_i2c_xfer               = NULL;
     instance->api.meba_sfp_insertion_status_get   = NULL;
