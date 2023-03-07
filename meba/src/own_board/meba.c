@@ -1,338 +1,360 @@
-// Copyright (c) 2004-2023 Microchip Technology Inc. and its subsidiaries.
+// Copyright (c) 2004-2020 Microchip Technology Inc. and its subsidiaries.
 // SPDX-License-Identifier: MIT
 
-//Standard Library
+
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <microchip/ethernet/board/api.h>
 
-//MEBA API
-#include "microchip/ethernet/board/api.h"
 #include "meba_aux.h"
 
-#if 1
-#define PORTS_MAX 4
-#endif
+#define RED   0    // NB: Red/Green reversed in board docs
+#define GREEN 1    // NB: Red/Green reversed in board docs
+#define LED_ON  MESA_SGPIO_MODE_OFF    // Inverse polarity
+#define LED_OFF MESA_SGPIO_MODE_ON     // Inverse polarity
+#define MAX_PORTS 8
+/* Local mapping table */
+typedef struct {
+    int32_t                chip_port;
+    mesa_miim_controller_t miim_controller;
+    uint8_t                miim_addr;
+    mesa_port_interface_t  mac_if;
+    meba_port_cap_t        cap;
+} port_map_t;
 
-//My Boards
-typedef enum {
-    BOARD_TYPE_VSC7514_PCB123,
-    BOARD_TYPE_LAN9668_UNG8290
-} my_board_type_t;
-
-//Joem: MAX_PORTS for both evaluation boards
-#define MAX_PORTS 11 
+typedef meba_port_entry_t ocelot_port_info_t;
 
 typedef struct meba_board_state {
-    my_board_type_t       board_type;
     int                   port_cnt;
     meba_port_entry_t     *entry;
-    mepa_device_t         *phy_devices[PORTS_MAX];
-    mesa_port_status_t    status[PORTS_MAX];
+    mepa_device_t        *phy_devices[MAX_PORTS];
 } meba_board_state_t;
 
-//Joem: TOFIGUREOUT
-/* Observation: meba_aux is only used for VSC* switches not in LAN9668.
- */
-static const meba_aux_rawio_t rawio = 
-{
-    .base = 0,
-    .gcb = 0x07,
-    .miim = {
-        .status = 0x27+0,
-        .cmd    = 0x27+2,
-        .data   = 0x27+3,
-        .cfg    = 0x27+4,
-    },
-    .gpio = {
-        .alt_0  = 0x15,
-    }
+/* --------------------------- Board specific ------------------------------- */
+
+// NB: No SFP support!
+static port_map_t port_table[] = {
+    /*0*/{4, MESA_MIIM_CONTROLLER_1, 4, MESA_PORT_INTERFACE_QSGMII, MEBA_PORT_CAP_TRI_SPEED_COPPER},
+    /*1*/{5, MESA_MIIM_CONTROLLER_1, 5, MESA_PORT_INTERFACE_QSGMII, MEBA_PORT_CAP_TRI_SPEED_COPPER},
+    /*2*/{6, MESA_MIIM_CONTROLLER_1, 6, MESA_PORT_INTERFACE_QSGMII, MEBA_PORT_CAP_TRI_SPEED_COPPER},
+    /*3*/{7, MESA_MIIM_CONTROLLER_1, 7, MESA_PORT_INTERFACE_QSGMII, MEBA_PORT_CAP_TRI_SPEED_COPPER},
+    /*4*/{0, MESA_MIIM_CONTROLLER_0, 0, MESA_PORT_INTERFACE_SGMII, (MEBA_PORT_CAP_TRI_SPEED_COPPER | MEBA_PORT_CAP_INT_PHY)},
+    /*5*/{1, MESA_MIIM_CONTROLLER_0, 1, MESA_PORT_INTERFACE_SGMII, (MEBA_PORT_CAP_TRI_SPEED_COPPER | MEBA_PORT_CAP_INT_PHY)},
+    /*6*/{2, MESA_MIIM_CONTROLLER_0, 2, MESA_PORT_INTERFACE_SGMII, (MEBA_PORT_CAP_TRI_SPEED_COPPER | MEBA_PORT_CAP_INT_PHY)},
+    /*7*/{3, MESA_MIIM_CONTROLLER_0, 3, MESA_PORT_INTERFACE_SGMII, (MEBA_PORT_CAP_TRI_SPEED_COPPER | MEBA_PORT_CAP_INT_PHY)},
+    /*8*/{9, MESA_MIIM_CONTROLLER_1, 28, MESA_PORT_INTERFACE_SGMII, MEBA_PORT_CAP_TRI_SPEED_COPPER},
 };
 
-static uint32_t own_board_vsc7514_capability(meba_inst_t inst, int cap)
-{
-
-}
-static mesa_rc own_board_vsc7514_reset_t(meba_inst_t inst, meba_reset_point_t reset)
-{
-
-}
-static mesa_rc own_board_vsc7514_port_entry_get_t(meba_inst_t inst, mesa_port_no_t port_no, meba_port_entry_t *entry)
-{
-
-}
-
-static mesa_rc pcb123_init_board(meba_inst_t inst)
+static mesa_rc ocelot_pcb121_init_board(meba_inst_t inst)
 {
     mesa_rc rc;
+    uint32_t gpio_no, port;
     mesa_sgpio_conf_t conf;
-    uint32_t port, gpio_no;
 
-    /* Configure GPIOs for MIIM/MDIO and I2C */
-    for (gpio_no = 14; gpio_no <= 17; gpio_no++) {
+    // Configure GPIOs for MIIM/MDIO
+    for (gpio_no = 14; gpio_no < 16; gpio_no++) {
         (void)mesa_gpio_mode_set(NULL, 0, gpio_no, MESA_GPIO_ALT_0);
-        printf("gpio_no: %i\r\n",gpio_no);
     }
 
-    /* GPIO pins 0-3 are used for SGPIOs. */
-    (void)mesa_gpio_mode_set(NULL, 0, 0, MESA_GPIO_ALT_0);  // SGPIO Grp 0 / CLK
-    (void)mesa_gpio_mode_set(NULL, 0, 1, MESA_GPIO_ALT_0);  // SGPIO Grp 0 / DO
-    (void)mesa_gpio_mode_set(NULL, 0, 2, MESA_GPIO_ALT_0);  // SGPIO Grp 0 / DI
-    (void)mesa_gpio_mode_set(NULL, 0, 3, MESA_GPIO_ALT_0);  // SGPIO Grp 0 / LD
+    // Configure GPIOs for SGPIO
+    for (gpio_no = 0; gpio_no < 2; gpio_no++) {
+        (void)mesa_gpio_mode_set(NULL, 0, gpio_no, MESA_GPIO_ALT_0);
+    }
 
-    printf("sgpio\r\n");
-    /* Setup SGPIO group 0 */
     if ((rc = mesa_sgpio_conf_get(NULL, 0, 0, &conf)) == MESA_RC_OK) {
-        
-        printf("sgpio setup \r\n");
-        /* The blink mode 0 is 5 HZ for link activity and collisions in half duplex. */
+
         conf.bmode[0] = MESA_SGPIO_BMODE_5;
+        conf.bit_count = 2; // Two bit per port
 
-        /* Enable two bits per port */
-        conf.bit_count = 2;
-
-        /* Enable SLED ports 10:0 as port status LEDs */
-        for (port = 0; port <= 10; port++) {
+        // Port 11:0 with 2 bit per port
+        for (port = 0; port < 12; port++) {
             conf.port_conf[port].enabled = true;
-            conf.port_conf[port].mode[0] = MESA_SGPIO_MODE_ON;
-            conf.port_conf[port].mode[1] = MESA_SGPIO_MODE_ON;
-            conf.port_conf[port].int_pol_high[0] = true; /* LOS of signal is active high */
+            conf.port_conf[port].mode[RED] = LED_OFF;
+            conf.port_conf[port].mode[GREEN] = LED_OFF;
         }
+        // Disable PCIe port
+        conf.port_conf[9].enabled = false;
 
-        /* Enable SLED port 11 as system status LED */
-        conf.port_conf[11].enabled = true;
-        conf.port_conf[11].mode[0] = MESA_SGPIO_MODE_ON;
-        conf.port_conf[11].mode[1] = MESA_SGPIO_MODE_OFF;
+        rc = mesa_sgpio_conf_set(NULL, 0, 0, &conf);
+    }
 
-        /* Enable SGPIO output ports 23:12 as LED_SEL_x (dual-media), MUX_SELx (I2C),
-           RS422_xOE (IEEE1588 RS422), SFP control signals and CardDetect from uSD slot */
-        for (port = 12; port <= 23; port++) {
-            conf.port_conf[port].enabled = true;
-            conf.port_conf[port].mode[0] = MESA_SGPIO_MODE_OFF;
-            conf.port_conf[port].mode[1] = MESA_SGPIO_MODE_OFF;
+    return rc;
+}
+
+static void ocelot_pcb121_init_porttable(meba_inst_t inst)
+{
+    meba_board_state_t *board = INST2BOARD(inst);
+    mesa_port_no_t      port_no;
+    /* Fill out port mapping table */
+    for (port_no = 0; port_no < board->port_cnt; port_no++) 
+    {
+        meba_port_entry_t *entry = &board->entry[port_no];
+        entry->map.chip_port = port_table[port_no].chip_port;
+        entry->map.miim_controller = port_table[port_no].miim_controller;
+        entry->map.miim_addr = port_table[port_no].miim_addr;
+        entry->mac_if = port_table[port_no].mac_if;
+        entry->cap = port_table[port_no].cap;
+    }
+}
+
+/* ---------------------------   Exposed API  ------------------------------- */
+
+static uint32_t ocelot_capability(meba_inst_t inst,
+                                  int cap)
+{
+    meba_board_state_t *board = INST2BOARD(inst);
+    T_N(inst, "Called - %d", cap);
+    switch (cap) {
+        case MEBA_CAP_1588_CLK_ADJ_DAC:
+        case MEBA_CAP_1588_REF_CLK_SEL:
+            return false;
+        case MEBA_CAP_POE:
+            return false;
+        case MEBA_CAP_TEMP_SENSORS:
+            return 2;
+        case MEBA_CAP_BOARD_PORT_COUNT:
+        case MEBA_CAP_BOARD_PORT_MAP_COUNT:
+            // On this platform port count and port map count are identical (no loop ports)
+            return board->port_cnt;
+        case MEBA_CAP_LED_MODES:
+            return 1;    /* No alternate led mode support */
+        case MEBA_CAP_DYING_GASP:
+            return false;
+        case MEBA_CAP_FAN_SUPPORT:
+            return false;
+        case MEBA_CAP_LED_DIM_SUPPORT:
+            return false;
+        case MEBA_CAP_BOARD_HAS_PCB107_CPLD:
+            return false;
+        case MEBA_CAP_PCB107_CPLD_CS_VIA_MUX:
+            return false;
+        case MEBA_CAP_BOARD_HAS_PCB135_CPLD:
+            return false;
+        case MEBA_CAP_SYNCE_PTP_CLOCK_OUTPUT:      // NOTE: Capability currently not used on Ocelot. Therefore, it has been set to -1
+            return -1;
+        case MEBA_CAP_SYNCE_HO_POST_FILTERING_BW:  // NOTE: Capability currently not used on Ocelot. Therefore, it has been set to 0
+            return 0;
+        case MEBA_CAP_SYNCE_CLOCK_DPLL:            // NOTE: Capability currently not used on Ocelot. Therefore, it has been set to -1
+            return -1;
+        case MEBA_CAP_SYNCE_CLOCK_OUTPUT_CNT:      // NOTE: Capability currently not used on Ocelot. Therefore, it has been set to 0
+            return 0;
+        case MEBA_CAP_SYNCE_CLOCK_EEC_OPTION_CNT:  // NOTE: Capability currently not used on Ocelot. Therefore, it has been set to 0
+            return 0;
+        case MEBA_CAP_ONE_PPS_INT_ID:
+            return MEBA_EVENT_PTP_PIN_2;
+        case MEBA_CAP_SYNCE_DPLL_MODE_SINGLE:
+            return false;
+        case MEBA_CAP_SYNCE_DPLL_MODE_DUAL:        // Ocelot does not support dual DPLL mode
+            return false;
+        case MEBA_CAP_POE_BT:
+            return false;
+        case MEBA_CAP_SYNCE_STATION_CLOCK_MUX_SET:
+            return false;
+        case MEBA_CAP_CPU_PORTS_COUNT:
+            return 0;
+        default:
+            T_E(inst, "Unknown capability %d", cap);
+            MEBA_ASSERT(0);
+    }
+    return 0;
+}
+
+static mesa_rc ocelot_port_entry_get(meba_inst_t inst,
+                                     mesa_port_no_t port_no,
+                                     meba_port_entry_t *entry)
+{
+    mesa_rc rc;
+    meba_board_state_t *board = INST2BOARD(inst);
+    if (port_no < board->port_cnt) {
+        *entry = board->entry[port_no];
+        rc = MESA_RC_OK;
+    } else {
+        rc = MESA_RC_ERROR;
+    }
+    T_N(inst, "Called(%d): rc %d - chip %d, miim bus %d, addr: %d", port_no, rc,
+        entry->map.chip_port, entry->map.miim_controller, entry->map.miim_addr);
+    return rc;
+}
+
+static mesa_rc ocelot_status_led_set(meba_inst_t inst,
+                                     meba_led_type_t type,
+                                     meba_led_color_t color)
+{
+    mesa_rc rc = MESA_RC_ERROR;
+    if (type == MEBA_LED_TYPE_FRONT) {
+        T_D(inst, "LED:%d, color=%d", type, color);
+        mesa_sgpio_conf_t conf;
+        if ((rc = mesa_sgpio_conf_get(NULL, 0, 0, &conf)) == MESA_RC_OK) {
+            mesa_sgpio_mode_t mode_green, mode_red;
+            switch (color) {
+                case MEBA_LED_COLOR_OFF:
+                    mode_green = LED_OFF;
+                    mode_red = LED_OFF;
+                    break;
+                case MEBA_LED_COLOR_GREEN:
+                    mode_green = LED_ON;
+                    mode_red = LED_OFF;
+                    break;
+                case MEBA_LED_COLOR_RED:
+                    mode_green = LED_OFF;
+                    mode_red = LED_ON;
+                    break;
+                case MEBA_LED_COLOR_YELLOW:
+                    mode_green = LED_ON;
+                    mode_red = LED_ON;
+                    break;
+                default:
+                    rc = MESA_RC_ERROR;
+            }
+            if (rc == MESA_RC_OK) {
+                mesa_sgpio_port_conf_t *port_conf = &conf.port_conf[11];
+                port_conf->mode[GREEN] = mode_green;
+                port_conf->mode[RED] = mode_red;
+                T_I(inst, "LED %d (chip %d) G/R=[%d,%d]", type, 11, mode_green, mode_red);
+                rc = mesa_sgpio_conf_set(NULL, 0, 0, &conf);
+            }
         }
-
-        /* MUX_SELx (I2C) is controlled by the BSP driver */
-        conf.port_conf[13].mode[0] = MESA_SGPIO_MODE_NO_CHANGE;
-        conf.port_conf[13].mode[1] = MESA_SGPIO_MODE_NO_CHANGE;
-        conf.port_conf[14].mode[0] = MESA_SGPIO_MODE_NO_CHANGE;
-
-        /* SFP RateSel = enabled */
-        for (port = 16; port <= 19; port++) {
-            conf.port_conf[port].mode[0] = MESA_SGPIO_MODE_ON;
-            conf.port_conf[port].mode[1] = MESA_SGPIO_MODE_ON;
-        }
-
-        /* SFP TxDisable = enabled */
-        for (port = 20; port <= 23; port++) {
-            conf.port_conf[port].mode[0] = MESA_SGPIO_MODE_ON;
-            conf.port_conf[port].mode[1] = MESA_SGPIO_MODE_ON;
-        }
-
-        (void)mesa_sgpio_conf_set(NULL, 0, 0, &conf);
     }
     return rc;
 }
 
-//My Meba Implementation
-meba_inst_t meba_initialize(size_t callouts_size, const meba_board_interface_t *callouts)
+static mesa_rc ocelot_port_led_update(meba_inst_t inst,
+                                      mesa_port_no_t port_no,
+                                      const mesa_port_status_t *status,
+                                      const mesa_port_counters_t *counters,
+                                      const meba_port_admin_state_t *state)
 {
-    meba_inst_t         instance;
-    meba_board_state_t  *board;
-    mesa_rc             rc = 0;
+    meba_board_state_t *board = INST2BOARD(inst);
+    mesa_rc            rc = MESA_RC_OK;
 
-    //Joem: For board_conf_get
-    char                board_name[32];
-    uint32_t            target = 0;
-    uint32_t            type = 10000;
-    uint32_t            board_port_cnt = 10000;
-    uint32_t            mux_mode = 0xffffffff;
-    int32_t             mep_loop_port = -1;
-    uint16_t            data = 0;
-    uint32_t            i;
-    
-    
-    //Joem: Greetings from MEBA
-    fprintf(stdout, "Greetings from MEBA!\r\n");
+    if (port_no < board->port_cnt && port_no < 8) {
+        mesa_sgpio_conf_t conf;
+        uint32_t sgpio_port = port_table[port_no].chip_port;
+        if ((rc = mesa_sgpio_conf_get(NULL, 0, 0, &conf)) == MESA_RC_OK) {
+            mesa_sgpio_mode_t mode_green, mode_red;
+            if (status->link) {
+                mode_green = LED_ON;
+                if (status->speed >= MESA_SPEED_1G) {
+                    /* Green only */
+                    mode_red = LED_OFF;    // Red OFF
+                } else {
+                    /* Yellow  */
+                    mode_red = mode_green;            // Red + Green => Yellow
+                }
+            } else {
+                /* Both LEDs off */
+                mode_red = LED_OFF;
+                mode_green = LED_OFF;
+            }
+
+            T_I(inst, "Port %d (chip %d) G/R=[%d,%d]", port_no, sgpio_port, mode_green, mode_red);
+            conf.port_conf[sgpio_port].mode[RED] = mode_red;
+            conf.port_conf[sgpio_port].mode[GREEN] = mode_green;
+            rc = mesa_sgpio_conf_set(NULL, 0, 0, &conf);
+        }
+    }
+    return rc;
+}
+
+static mesa_rc ocelot_reset(meba_inst_t inst,
+                            meba_reset_point_t reset)
+{
+    meba_board_state_t *board = INST2BOARD(inst);
+    mesa_rc rc = MESA_RC_OK;
+    mesa_port_no_t int_phy_base_port = 4, ext_phy_base_port = 0;
+
+    T_I(inst, "Called - %d", reset);
+    switch (reset) {
+        case MEBA_BOARD_INITIALIZE:
+            rc = ocelot_pcb121_init_board(inst);
+            sleep(1); // Make sure PHYs are accessible
+            break;
+        case MEBA_PORT_RESET:
+            if ((rc = vtss_phy_pre_reset(PHY_INST, int_phy_base_port)) == MESA_RC_OK) { // Internal Nano PHY
+                rc = vtss_phy_pre_reset(PHY_INST, ext_phy_base_port); // External Viper PHY
+            }
+            break;
+        case MEBA_PORT_RESET_POST:
+            if ((rc = vtss_phy_post_reset(PHY_INST, int_phy_base_port)) == MESA_RC_OK) { // Internal Nano PHY
+                rc = vtss_phy_post_reset(PHY_INST, ext_phy_base_port); // External Viper PHY
+            }
+            break;
+        case MEBA_STATUS_LED_INITIALIZE:
+        case MEBA_PORT_LED_INITIALIZE:
+        case MEBA_FAN_INITIALIZE:
+            break;
+        case MEBA_SENSOR_INITIALIZE:
+            if ((rc = vtss_phy_chip_temp_init(PHY_INST, int_phy_base_port)) == MESA_RC_OK) { // Internal Nano PHY
+                rc = vtss_phy_chip_temp_init(PHY_INST, ext_phy_base_port); // External Viper PHY
+            }
+            break;
+        case MEBA_INTERRUPT_INITIALIZE:
+        case MEBA_SYNCE_DPLL_INITIALIZE:
+            break;
+        case MEBA_POE_INITIALIZE:
+            break;
+        case MEBA_PHY_INITIALIZE:
+            inst->phy_devices = (mepa_device_t **)&board->phy_devices;
+            inst->phy_device_cnt = board->port_cnt;
+            meba_phy_driver_init(inst);
+            break;
+    }
+
+    return rc;
+}
+
+meba_inst_t meba_initialize(size_t callouts_size,
+                            const meba_board_interface_t *callouts)
+{
+    meba_inst_t        inst;
+    meba_board_state_t *board;
 
     if (callouts_size < sizeof(*callouts)) {
         fprintf(stderr, "Callouts size problem, expected %zd, got %zd\n",
                 sizeof(*callouts), callouts_size);
-    
         return NULL;
     }
-    
-    //Joem: Get Information
-    fprintf(stdout, "Getting board information\r\n");
-    if(callouts->conf_get("board", board_name, sizeof(board_name), NULL) == MESA_RC_OK)
-    {
-        fprintf(stdout, "Board: %s\r\n", board_name);
+
+    // Allocate pulic state
+    if ((inst = meba_state_alloc(callouts,
+                                 "ocelot_pcb121",
+                                 MESA_TARGET_7512,
+                                 sizeof(*board))) == NULL) {
+        return NULL;
     }
-    else fprintf(stdout, "Failed to get board information\r\n");
 
-    /* 
-     * Some information below are board-specific 
-     * so not all of them return values. 
-     * (see board_conf_get()).
-     */
-    // //Joem: Get Target Information
-    // fprintf(stdout, "Getting target information\r\n");
-    // if(callouts->conf_get("target", (char*)target, sizeof(target), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "Target: 0x%x\r\n", target);
-    // }
-    // else fprintf(stdout, "Failed to get target information\r\n");
-
-    // //Joem: Get Type Information
-    // fprintf(stdout, "Getting type information\r\n");
-    // if(callouts->conf_get("type", (char*)type, sizeof(type), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "Ttype: %u\r\n", type);
-    // }
-    // else fprintf(stdout, "Failed to get type information\r\n");
-
-    // //Joem: Get Mux_Mode
-    // fprintf(stdout, "Getting mux_mode information\r\n");
-    // if(callouts->conf_get("mux_mode", (char*)mux_mode, sizeof(mux_mode), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "mux_mode: %u\r\n", mux_mode);
-    // }
-    // else fprintf(stdout, "Failed to get mux_mode information\r\n");
-
-    // //Joem: Get mep_loop_port
-    // fprintf(stdout, "Getting mep_loop_port information\r\n");
-    // if(callouts->conf_get("mep_loop_port", (char*)mep_loop_port, sizeof(mep_loop_port), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "mep_loop_port: %u\r\n", mep_loop_port);
-    // }
-    // else fprintf(stdout, "Failed to get mep_loop_port information\r\n");
-
-    // //Joem: Get pcb
-    // fprintf(stdout, "Getting pcb information\r\n");
-    // if(callouts->conf_get("pcb", (char*)type, sizeof(type), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "pcb: %u\r\n", type);
-    // }
-    // else fprintf(stdout, "Failed to get pcb information\r\n");
-
-    // //Joem: Get pcb_var
-    // fprintf(stdout, "Getting pcb_var information\r\n");
-    // if(callouts->conf_get("pcb_var", (char*)board_port_cnt, sizeof(board_port_cnt), NULL) == MESA_RC_OK)
-    // {
-    //     fprintf(stdout, "pcb_var: %u\r\n", board_port_cnt);
-    // }
-    // else fprintf(stdout, "Failed to get pcb_var information\r\n");
-
-    //Joem: Allocate and Initialize MEBA Public State
-    if(strcmp(board_name,"Ocelot Ref (pcb123)") == 0) 
-    {
-        if ((instance = meba_state_alloc(callouts,
-                                "My Own VSC7514",
-                                MESA_TARGET_7514,
-                                sizeof(*board))) == NULL) {
-            return NULL;
-        }
-        printf("Allocate and Init Success for VSC7514EV\r\n");
-    } 
-    else if (strcmp(board_name,"ung8290") == 0)  //Joem: TODO
-    {
-        if ((instance = meba_state_alloc(callouts,
-                                "My Own LAN9668",
-                                MESA_TARGET_LAN9668,
-                                sizeof(*board))) == NULL) {
-            return NULL;
-        }
-        printf("Allocate and Init Success for EVB-LAN9668\r\n");
-    }
-    else 
-    {
-        fprintf(stdout, "Failed to Set Board\r\n");
-    }
-      
     // Initialize our state
-    printf("Init MEBA\r\n");
-    MEBA_ASSERT(instance->private_data != NULL);
-    board = INST2BOARD(instance);
+    MEBA_ASSERT(inst->private_data != NULL);
+    board = INST2BOARD(inst);
 
-    if (meba_conf_get_u32(instance, "mux_mode", &i) == MESA_RC_OK) {
-        instance->props.mux_mode = (mesa_port_mux_mode_t) i;
-        printf("mux_mode: %i\r\n", instance->props.mux_mode);
-    } else {
-        // Defaults
-        T_D(instance, "Failed to read 'mux_mode' from the configuration file, reverting to defaults.");
-        if (instance->props.target == MESA_TARGET_7513) {
-            instance->props.mux_mode = MESA_PORT_MUX_MODE_0;
-        } else if (instance->props.target == MESA_TARGET_7514) {
-            instance->props.mux_mode = MESA_PORT_MUX_MODE_4;
-        }
-    }
+    inst->props.mux_mode = MESA_PORT_MUX_MODE_3;
+    board->port_cnt = 8;
 
-    //Joem: Sets GPIO_14 and GPIO_15 to use their Alternative Functions (MDC an MDIO)
-    (void)mebaux_gpio_mode_set(instance, &rawio, 14, MESA_GPIO_ALT_0);
-    (void)mebaux_gpio_mode_set(instance, &rawio, 15, MESA_GPIO_ALT_0);
-
-    //Joem: Perform Read PHYs (7 = miim_addr, 2 = reg_addr, &oui = data)
-    rc = mebaux_miim_rd(instance, &rawio, MESA_MIIM_CONTROLLER_1, 7, 2, &data);
-    printf("Data from PHY reg 2: 0x%x\r\n", data);
-
-    //Joem: HARDCODED
-    printf("Hardcoded Board Type\r\n");
-    board->board_type = BOARD_TYPE_VSC7514_PCB123;
-    strncpy(instance->props.name, "Ocelot Ref", sizeof(instance->props.name));
-    board->port_cnt = 10; //no NPI port
-    
-    printf("Hardcoded Actual Number of Ports\r\n");
-    // The actual number of ports the HW design has, not the one exposed by board->port_cnt
-    uint32_t count = (board->board_type == BOARD_TYPE_VSC7514_PCB123) ? 10 :
-                     ((board->board_type == BOARD_TYPE_LAN9668_UNG8290) ? 8 : 10);
-    // board->sgpio_port = (uint32_t*) calloc(count, sizeof(uint32_t));
-    // if (board->sgpio_port == NULL) {
-    //     fprintf(stderr, "Board to SGPIO port table malloc failure\n");
-    //     goto error_out;
-    // }
-
-    //Joem: Manual Port Table Allocation
-    printf("Direct PCB123_INIT_BOARD call\r\n");
-    rc = pcb123_init_board(instance);
-    if (rc != MESA_RC_OK) 
-    {
-        printf("Failed to fill port mapping table\r\n");
+    board->entry = (ocelot_port_info_t*) calloc(board->port_cnt, sizeof(ocelot_port_info_t));
+    if (board->entry == NULL) {
+        fprintf(stderr, "Port table malloc failure\n");
         goto error_out;
     }
-    instance->props.board_type = (vtss_board_type_t) (VTSS_BOARD_OCELOT_REF + board->board_type);    // Exposed temporarily
-    printf("Board: %s, type %d, target %4x, %d ports, port_cfg %d\r\n",
-        instance->props.name, board->board_type, instance->props.target, board->port_cnt, instance->props.mux_mode);
+
+    /* Fill out port mapping table */
+    ocelot_pcb121_init_porttable(inst);
+
+    T_I(inst, "Board: %s, target %4x, %d ports, mux_mode %d",
+        inst->props.name, inst->props.target, board->port_cnt, inst->props.mux_mode);
 
     // Hook up board API functions
-    printf("Hooking up board API\r\n");
-    instance->api.meba_capability                 = own_board_vsc7514_capability;
-    instance->api.meba_port_entry_get             = own_board_vsc7514_port_entry_get_t;
-    instance->api.meba_reset                      = own_board_vsc7514_reset_t;
-    instance->api.meba_sensor_get                 = NULL;
-    instance->api.meba_sfp_i2c_xfer               = NULL;
-    instance->api.meba_sfp_insertion_status_get   = NULL;
-    instance->api.meba_sfp_status_get             = NULL;
-    instance->api.meba_port_admin_state_set       = NULL;
-    instance->api.meba_status_led_set             = NULL;
-    instance->api.meba_port_led_update            = NULL;
-    //inst->api.meba_led_intensity_set          = ocelot_led_intensity_set;
-    instance->api.meba_irq_handler                = NULL;
-    instance->api.meba_irq_requested              = NULL;
-    instance->api.meba_event_enable               = NULL;
-    instance->api.meba_deinitialize               = meba_deinitialize;
-    instance->api.meba_ptp_rs422_conf_get         = NULL;
-    instance->api.meba_ptp_external_io_conf_get   = NULL;
+    T_D(inst, "Hooking up board API");
+    inst->api.meba_capability                 = ocelot_capability;
+    inst->api.meba_port_entry_get             = ocelot_port_entry_get;
+    inst->api.meba_status_led_set             = ocelot_status_led_set;
+    inst->api.meba_port_led_update            = ocelot_port_led_update;
+    inst->api.meba_reset                      = ocelot_reset;
+    inst->api.meba_deinitialize               = meba_deinitialize;
 
-    instance->api_synce = NULL;;
-    instance->api_tod = NULL;;
-    instance->api_poe = NULL;;
-
-    //Joem: For Testing Purposes Only
-    printf("End\r\n");
-
-    return instance;
+    return inst;
 
 error_out:
-    free(instance);
+    free(inst);
     return NULL;
 }
