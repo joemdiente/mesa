@@ -267,7 +267,6 @@ APP_TARGET(NAME app_lan966x_ad         MESA lan966x_ad         MEBA meba_lan966x
 APP_TARGET(NAME app_lan969x            MESA lan969x            MEBA meba_sparx5)
 APP_TARGET(NAME app_lan969x_lm         MESA lan969x_lm         MEBA meba_sparx5)
 
-
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL "mipsel")
     IMG_TARGET(NAME mipsel_vsc7428         TYPE mfi  APP app_vsc7428  MACHINE luton_pcb091   )
     IMG_TARGET(NAME mipsel_vsc7429         TYPE mfi  APP app_vsc7429  MACHINE luton_pcb090   )
@@ -297,6 +296,9 @@ if (CMAKE_SYSTEM_PROCESSOR STREQUAL "mipsel")
     IMG_TARGET(NAME mipsel_vsc7448_pcb110  TYPE mfi  APP app_vsc7448  MACHINE jaguar2_pcb110 )
     IMG_TARGET(NAME mipsel_vsc7448_pcb111  TYPE mfi  APP app_vsc7448  MACHINE jaguar2_pcb111 )
     #IMG_TARGET(NAME mipsel_vsc7449        TYPE mfi  APP app_vsc7449  MACHINE jaguar2_pcb111 )
+    
+    #Joem: My Custom Image for VSC7514EV; MACHINE depends on the IMGGEN.rb
+    IMG_TARGET(NAME mipsel_vsc7514_pcb123-own_board    TYPE mfi    APP app_vsc7514-own_board  MACHINE ocelot_pcb123   )
 
 elseif (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
         #IMG_TARGET(NAME arm64_ls1046_lan966x     TYPE fit      APP app_lan966x         MACHINE ls1046a)

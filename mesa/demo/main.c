@@ -385,7 +385,7 @@ static mesa_rc board_dtree_get(const char *tag, char *buf, size_t bufsize, size_
     int    fd;
     char   fname[128];
     size_t n;
-
+    
     sprintf(fname, "/proc/device-tree/meba/%s", tag);
     if ((fd = open(fname, O_RDONLY)) < 0) {
         T_D("dt tag %s not found", fname);
@@ -416,6 +416,9 @@ static mesa_rc board_conf_get(const char *tag, char *buf, size_t bufsize, size_t
     size_t     len = 0;
     uint32_t   mux_mode = 0xffffffff;
     char       name[20];
+
+    //Joem: Debug
+    printf("Called function is: %s\n",__func__);
 
     // Try device-tree first
     if (board_dtree_get(tag, buf, bufsize, buflen) == MESA_RC_OK) {
@@ -1045,6 +1048,9 @@ int main(int argc, char **argv)
         sleep_us = 200;
     }
 
+    //Joem: Test Main.c or mesa-demo-<part>
+    printf("Test Main\r\n");
+
     // Register trace
     init->cmd = MSCC_INIT_CMD_REG;
     init_modules(init);
@@ -1090,6 +1096,9 @@ int main(int argc, char **argv)
             return 1;
         }
     }
+
+    //Joem:
+    printf("Init MEBA\r\n");
 
     // Initialize MEBA
     memset(&board_info, 0, sizeof(board_info));
