@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <microchip/ethernet/switch/api.h>
 #include "microchip/ethernet/board/api.h"
+#include <vtss_phy_api.h>
 #include <json-c/json.h>
 
 extern meba_inst_t meba_global_inst;
@@ -30,7 +31,6 @@ extern json_rpc_method_t json_rpc_table[];
 #define MESA_RC(expr) { mesa_rc _rc = (expr); if (_rc != MESA_RC_OK) { req->error = 1; return _rc; } }
 
 mesa_rc json_rpc_call(json_rpc_req_t *req, mesa_rc rc);
-
 // Any object
 mesa_rc json_rpc_get_idx_json_object(json_rpc_req_t *req, json_object *obj, int *idx, json_object **obj_value);
 mesa_rc json_rpc_get_name_json_object(json_rpc_req_t *req, json_object *obj, const char *name, json_object **obj_value);
@@ -134,3 +134,5 @@ mesa_rc json_rpc_get2_mesa_qos_ingress_map_t(json_rpc_req_t *req, json_object *o
 mesa_rc json_rpc_add2_mesa_qos_ingress_map_t(json_rpc_req_t *req, json_object *obj, mesa_qos_ingress_map_t *parm);
 mesa_rc json_rpc_get2_mesa_qos_egress_map_t(json_rpc_req_t *req, json_object *obj, mesa_qos_egress_map_t *parm);
 mesa_rc json_rpc_add2_mesa_qos_egress_map_t(json_rpc_req_t *req, json_object *obj, mesa_qos_egress_map_t *parm);
+mesa_rc json_rpc_get_idx_vtss_debug_printf_t(json_rpc_req_t *req, struct json_object *obj, int *idx, vtss_debug_printf_t *pr);
+mesa_rc json_rpc_add_name_mepa_phy_cap_t(json_rpc_req_t *req, json_object *obj, const char *name, mepa_phy_cap_t *parm);

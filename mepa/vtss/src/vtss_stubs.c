@@ -952,12 +952,12 @@ vtss_rc vtss_phy_10g_sgmii_mode_set(const vtss_inst_t inst, const vtss_port_no_t
     return VTSS_RC_NOT_IMPLEMENTED;
 }
 
-vtss_rc vtss_phy_10g_i2c_read(const vtss_inst_t inst, const vtss_port_no_t port_no, const u16 addr, u16 *value)
+vtss_rc vtss_phy_10g_i2c_read(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 addr, u8 *const value)
 {
     return VTSS_RC_NOT_IMPLEMENTED;
 }
 
-vtss_rc vtss_phy_10g_i2c_write(const vtss_inst_t inst, const vtss_port_no_t port_no, const u16 addr, const u16 *value)
+vtss_rc vtss_phy_10g_i2c_write(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 addr, const u8 *const value)
 {
     return VTSS_RC_NOT_IMPLEMENTED;
 }
@@ -1089,12 +1089,12 @@ vtss_rc vtss_phy_clock_conf_get(const vtss_inst_t inst, const vtss_port_no_t por
     return VTSS_RC_NOT_IMPLEMENTED;
 }
 
-vtss_rc vtss_phy_i2c_read(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 i2c_mux, const u8 i2c_reg_addr, const u8 i2c_device_addr, u8 *const value, u8 cnt, BOOL word_access)
+vtss_rc vtss_phy_i2c_read(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 i2c_mux, const u8 i2c_reg_addr, const u8 i2c_device_addr, BOOL word_access, u8 cnt, u8 *const value)
 {
     return VTSS_RC_NOT_IMPLEMENTED;
 }
 
-vtss_rc vtss_phy_i2c_write(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 i2c_mux, const u8 i2c_reg_addr, const u8 i2c_device_addr, u8 *value, u8 cnt, BOOL word_access)
+vtss_rc vtss_phy_i2c_write(const vtss_inst_t inst, const vtss_port_no_t port_no, const u8 i2c_mux, const u8 i2c_reg_addr, const u8 i2c_device_addr, BOOL word_access, u8 cnt, const u8 *value)
 {
     return VTSS_RC_NOT_IMPLEMENTED;
 }
@@ -1651,6 +1651,11 @@ vtss_rc vtss_phy_ts_fifo_read_cb_get(const vtss_inst_t inst, vtss_phy_ts_fifo_re
     return VTSS_RC_NOT_IMPLEMENTED;
 }
 
+vtss_rc vtss_phy_ts_fifo_get(const vtss_inst_t inst,  const vtss_port_no_t port_no, vtss_phy_ts_fifo_entry_t ts_list[], const size_t size, uint32_t *const num)
+{
+    return VTSS_RC_NOT_IMPLEMENTED;
+}
+
 vtss_rc vtss_phy_ts_ingress_engine_init(const vtss_inst_t inst, const vtss_port_no_t port_no, const vtss_phy_ts_engine_t eng_id, const vtss_phy_ts_encap_t encap_type, const u8 flow_st_index, const u8 flow_end_index, const vtss_phy_ts_engine_flow_match_t flow_match_mode)
 {
     return VTSS_RC_NOT_IMPLEMENTED;
@@ -1969,8 +1974,39 @@ vtss_rc vtss_ewis_perf_mode_get(const vtss_inst_t inst, const vtss_port_no_t por
 {
     return VTSS_RC_NOT_IMPLEMENTED;
 }
+
+vtss_rc vtss_phy_10g_extended2_event_enable_get(const vtss_inst_t inst, const vtss_port_no_t port_no, vtss_phy_10g_extnd2_event_t *const ex2_ev_mask)
+{
+    return VTSS_RC_NOT_IMPLEMENTED;
+}
+
+vtss_rc vtss_phy_10g_extended2_event_poll(const vtss_inst_t inst, const vtss_port_no_t port_no, vtss_phy_10g_extnd2_event_t *const ex2_events)
+{
+    return VTSS_RC_NOT_IMPLEMENTED;
+}
+
+vtss_rc vtss_phy_10g_extended2_event_enable_set(const vtss_inst_t inst, const vtss_port_no_t port_no, const vtss_phy_10g_extnd2_event_t ex2_ev_mask, const BOOL extnd2_enable)
+{
+    return VTSS_RC_NOT_IMPLEMENTED;
+}
+
+vtss_rc vtss_phy_10g_i2c_reset(const vtss_inst_t inst, const vtss_port_no_t port_no)
+{
+    return VTSS_RC_NOT_IMPLEMENTED;
+}
 #endif // !defined(VTSS_FEATURE_WIS)
 
+#if !defined(VTSS_CHIP_10G_PHY)
+vtss_rc vtss_phy_10g_sync(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no)
+{
+   return VTSS_RC_NOT_IMPLEMENTED;
+}
+
+vtss_rc vtss_phy_10g_restart_conf_set(struct vtss_state_s *vtss_state)
+{
+   return VTSS_RC_NOT_IMPLEMENTED;
+}
+#endif
 #if !defined(VTSS_CHIP_CU_PHY)
 vtss_rc vtss_phy_patch_settings_get(const vtss_inst_t    inst,
                                     const vtss_port_no_t port_no,

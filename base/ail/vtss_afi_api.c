@@ -271,17 +271,18 @@ static void afi_frm_init(vtss_afi_frm_t *frm)
  */
 static vtss_rc afi_frm_alloc(vtss_state_t *const vtss_state, i32 *const frm_idx, i32 min_frm_idx, u8 entry_type, i32 prev_frm_tbl_idx)
 {
-    vtss_rc        rc;
-    vtss_afi_frm_t *entry;
+    vtss_afi_state_t *state = &vtss_state->afi;
+    vtss_rc          rc;
+    vtss_afi_frm_t   *entry;
 
-    if ((rc = afi_res_alloc(vtss_state, vtss_state->afi.frms_alloced, VTSS_AFI_FRM_CNT, (u32 *)frm_idx, min_frm_idx, VTSS_AFI_FRM_CNT - 1, FALSE)) != VTSS_RC_OK) {
+    if ((rc = afi_res_alloc(vtss_state, state->frms_alloced, VTSS_AFI_FRM_CNT, (u32 *)frm_idx, min_frm_idx, VTSS_AFI_FRM_CNT - 1, FALSE)) != VTSS_RC_OK) {
         VTSS_E("Out of FRMs");
         return rc;
     }
 
     VTSS_D("Allocated entry in FRM_TBL[%u]", (u32)(*frm_idx));
 
-    entry = &vtss_state->afi.frm_tbl[(u32)(*frm_idx)];
+    entry = &state->frm_tbl[(u32)(*frm_idx)];
     afi_frm_init(entry);
 
     // It's either a frame entry (0) or a delay entry (1)
@@ -289,7 +290,7 @@ static vtss_rc afi_frm_alloc(vtss_state_t *const vtss_state, i32 *const frm_idx,
 
     // Link the previous entry to this one
     if (prev_frm_tbl_idx >= 0) {
-        vtss_state->afi.frm_tbl[prev_frm_tbl_idx].next_ptr = *frm_idx;
+        state->frm_tbl[prev_frm_tbl_idx].next_ptr = *frm_idx;
     }
 
     return VTSS_RC_OK;
@@ -300,13 +301,15 @@ static vtss_rc afi_frm_alloc(vtss_state_t *const vtss_state, i32 *const frm_idx,
  */
 static vtss_rc afi_frm_free(vtss_state_t *const vtss_state, i32 frm_idx)
 {
+    vtss_afi_state_t *state = &vtss_state->afi;
+
     if (frm_idx >= VTSS_AFI_FRM_CNT) {
         VTSS_E("frm_idx=%i > %u", frm_idx, VTSS_AFI_FRM_CNT);
         return VTSS_RC_ERROR;
     }
 
-    VTSS_MEMSET(&vtss_state->afi.frm_tbl[frm_idx], 0, sizeof(vtss_state->afi.frm_tbl[frm_idx]));
-    return afi_res_free(vtss_state, vtss_state->afi.frms_alloced, frm_idx);
+    VTSS_MEMSET(&state->frm_tbl[frm_idx], 0, sizeof(state->frm_tbl[frm_idx]));
+    return afi_res_free(vtss_state, state->frms_alloced, frm_idx);
 }
 
 /******************************************************************************/
@@ -330,8 +333,9 @@ static void afi_dti_init(vtss_afi_dti_t *dti)
 static vtss_rc afi_dti_alloc(vtss_state_t *const vtss_state, u32 *const dti_idx)
 {
     vtss_rc rc;
+    u32 cnt = VTSS_AFI_FAST_INJ_CNT;
 
-    if ((rc = afi_res_alloc(vtss_state, vtss_state->afi.dtis_alloced, VTSS_AFI_FAST_INJ_CNT, dti_idx /* min_res_idx+max_res_idx (full range allowed) */, 0, VTSS_AFI_FAST_INJ_CNT - 1, FALSE)) != VTSS_RC_OK) {
+    if ((rc = afi_res_alloc(vtss_state, vtss_state->afi.dtis_alloced, cnt, dti_idx, 0, cnt - 1, FALSE)) != VTSS_RC_OK) {
         VTSS_E("Out of DTIs");
         return rc;
     }
@@ -346,8 +350,10 @@ static vtss_rc afi_dti_alloc(vtss_state_t *const vtss_state, u32 *const dti_idx)
  */
 static vtss_rc afi_dti_free(vtss_state_t *const vtss_state, u32 dti_idx)
 {
-    if (dti_idx >= VTSS_AFI_FAST_INJ_CNT) {
-        VTSS_E("dti_idx=%u > %u", dti_idx, VTSS_AFI_FAST_INJ_CNT);
+    u32 cnt = VTSS_AFI_FAST_INJ_CNT;
+
+    if (dti_idx >= cnt) {
+        VTSS_E("dti_idx=%u > %u", dti_idx, cnt);
         return VTSS_RC_ERROR;
     }
 
@@ -515,12 +521,14 @@ static vtss_rc afi_tti_free(vtss_state_t *const vtss_state, const u32 tti_idx)
  */
 vtss_rc afi_frm_idx_chk(struct vtss_state_s *const vtss_state, i32 frm_idx)
 {
+    vtss_afi_state_t *state = &vtss_state->afi;
+
     if (frm_idx < 0 || frm_idx >= VTSS_AFI_FRM_CNT) {
         VTSS_E("frm_idx == %i illegal", frm_idx);
         return VTSS_RC_ERROR;
     }
 
-    if (afi_res_is_free(vtss_state->afi.frms_alloced, frm_idx)) {
+    if (afi_res_is_free(state->frms_alloced, frm_idx)) {
         VTSS_E("frm_idx == %i not alloced", frm_idx);
         return VTSS_RC_ERROR;
     }
@@ -1972,11 +1980,15 @@ vtss_rc vtss_afi_inst_create(vtss_state_t *vtss_state)
     vtss_afi_state_t *state = &vtss_state->afi;
     vtss_port_no_t   port_no;
 
+    if (vtss_state->create_pre) {
+        // Preprocessing
+        return VTSS_RC_OK;
+    }
+
     // Set chip default values
     for (port_no = 0; port_no < VTSS_ARRSZ(state->port_tbl); port_no++) {
         state->port_tbl[port_no].frm_out_max = VTSS_AFI_FRM_OUT_MAX_DEF;
     }
-
     return VTSS_RC_OK;
 }
 

@@ -10,6 +10,7 @@
 struct mepa_callout_ctx;
 
 struct mepa_ts_driver;
+struct mepa_tc10_driver;
 
 /** \brief Contains methods that are specific to each phy. */
 struct mepa_driver;
@@ -155,6 +156,7 @@ typedef struct {
 typedef struct {
     mepa_bool_t link;        /**< Link is up */
     mepa_port_speed_t speed; /**< Speed */
+	mepa_bool_t master;      /**< Master/Slave Mode */
     mepa_bool_t fdx;         /**< Full duplex */
     mepa_aneg_t aneg;        /**< Auto-negotiation */
     mepa_bool_t copper;      /**< For dual-media ports */
@@ -175,6 +177,85 @@ typedef enum {
     MEPA_MEDIA_MODE_MDIX,     /**< MDIX */
 } mepa_media_mode_t;
 
+/** \breif preferred I2C clock ftrequency select */
+typedef enum {
+    MEPA_I2C_CLK_SEL_0 = 0, /** 100 Khz */
+    MEPA_I2C_CLK_SEL_1, /** 200 Khz */
+    MEPA_I2C_CLK_SEL_2, /** 800 Khz */
+    MEPA_I2C_CLK_SEL_3 /** 4Mhz */
+} mepa_i2c_clk_select_t;
+
+/** \brief preferref Force Media AMS Select */
+typedef enum {
+    MEPA_PHY_MEDIA_FORCE_AMS_SEL_NORMAL = 0, /**< Force AMS Override to Force Selection - Normal */
+    MEPA_PHY_MEDIA_FORCE_AMS_SEL_SERDES,     /**< Force AMS Override to Force Selection - SerDes Media */
+    MEPA_PHY_MEDIA_FORCE_AMS_SEL_COPPER,     /**< Force AMS Override to Force Selection - Copper Media */
+} mepa_phy_media_force_ams_sel_t;
+
+/** \brief 10G Phy operating mode enum type */
+typedef enum {
+    MEPA_PHY_LAN_MODE,          /**< LAN mode: Single clock (XREFCK=156,25 MHz), no recovered clock output  */
+    MEPA_PHY_WAN_MODE,          /**< WAN mode:\n */
+                                /**< 848X:   Dual clock (XREFCK=156,25 MHz, WREFCK=155,52 MHz), no recovered clock output\n */
+                                /**< Venice: Single clock (XREFCK), no recovered clock output\n */
+    MEPA_PHY_1G_MODE,           /**< 8488:   1G pass-through mode\n */
+                                /**< Venice: 1G mode, Single clock (XREFCK=156,25 MHz), no recovered clock output */
+    MEPA_PHY_LAN_SYNCE_MODE,    /**< LAN SyncE:\n */
+                                /**< if hl_clk_synth == 1:\n */
+                                /**< 8488:   Single clock (XREFCK=156,25 MHz), recovered clock output enabled\n */
+                                /**< Venice: Single clock (XREFCK=156,25 MHz), recovered clock output enabled\n */
+                                /**< if hl_clk_synth == 0:\n */
+                                /**< 8488:   Dual clock (XREFCK=156,25 MHz, SREFCK=156,25 MHz), recovered clock output enabled\n */
+                                /**< Venice: Dual clock (XREFCK=156,25 MHz, SREFCK=156,25 MHz), recovered clock output enabled\n */
+    MEPA_PHY_WAN_SYNCE_MODE,    /**< WAN SyncE:\n */
+                                /**< if hl_clk_synth == 1:\n */
+                                /**< 8488:   Single clock (WREFCK=155,52 MHz or 622,08 MHz), recovered clock output enabled\n */
+                                /**< Venice: Single clock (XREFCK=156,25 MHz), recovered clock output enabled\n */
+                                /**< if hl_clk_synth == 0:\n */
+                                /**< 8488:   Dual clock (WREFCK=155,52 MHz or 622,08 MHz, SREFCK=155,52 MHz), recovered clock output enabled\n */
+                                /**< Venice: Dual clock (XREFCK=156,25 MHz, SREFCK=155,52 MHz), recovered clock output enabled\n */
+    MEPA_PHY_LAN_MIXED_SYNCE_MODE, /**< 8488:   Channels are in different modes, channel being configured is in LAN\n */
+                                   /**< Venice: Same as VTSS_PHY_LAN_SYNCE_MODE */
+    MEPA_PHY_WAN_MIXED_SYNCE_MODE, /**< 8488:   Channels are in different modes, channel being configured is in WAN\n */
+                                   /**< Venice: Same as VTSS_PHY_WAN_SYNCE_MODE */
+    MEPA_PHY_REPEATER_MODE,    /**< Malibu: Repeater mode,better jitter performance  */
+} phy10g_oper_mode_t;
+
+/** \brief Phy Interface modes */
+typedef enum {
+    MEPA_PHY_XAUI_XFI,          /**< XAUI  <-> XFI - Interface mode. */
+    MEPA_PHY_XGMII_XFI,         /**< XGMII <-> XFI - Interface mode. Only for VSC8486 */
+    MEPA_PHY_RXAUI_XFI,         /**< RXAUI <-> XFI - Interface mode. Only for Venice */
+    MEPA_PHY_SGMII_LANE_0_XFI,  /**< SGMII <-> XFI - LANE 0. Only for Venice */
+    MEPA_PHY_SGMII_LANE_3_XFI,  /**< SGMII <-> XFI - LANE 3. Only for Venice */
+    MEPA_PHY_SFI_XFI,           /**< SFI   <-> XFI - Interface mode. Only for Malibu*/
+} phy10g_interface_mode_t;
+
+/** \brief 10G Phy Media type */
+typedef enum {
+    MEPA_MEDIA_TYPE_SR,         /**< SR,10GBASE-SR */
+    MEPA_MEDIA_TYPE_SR2,        /**< SR,10GBASE-SR */
+    MEPA_MEDIA_TYPE_DAC,        /**< DAC,Direct attach cable */
+    MEPA_MEDIA_TYPE_ZR,         /**< ZR,10GBASE-ZR */
+    MEPA_MEDIA_TYPE_KR,         /**< KR,10GBASE-KR */
+    MEPA_MEDIA_TYPE_SR_SC,      /**< SR,10GBASE-SR with software control*/
+    MEPA_MEDIA_TYPE_SR2_SC,     /**< SR,10GBASE-SR with software control*/
+    MEPA_MEDIA_TYPE_DAC_SC,     /**< DAC,Direct attach cable with software control*/
+    MEPA_MEDIA_TYPE_ZR_SC,      /**< ZR,10GBASE-ZR with software control*/
+    MEPA_MEDIA_TYPE_ZR2_SC,     /**< ZR,10GBASE-ZR with software control with ld_lev_ini:40*/
+    MEPA_MEDIA_TYPE_KR_SC,      /**< KR,10GBASE-KR with software control*/
+    MEPA_MEDIA_TYPE_NONE,       /**< None          */
+} phy10g_media_t;
+
+typedef struct {
+    phy10g_oper_mode_t oper_mode;
+    phy10g_interface_mode_t interface_mode;
+    uint32_t channel_id;
+    phy10g_media_t h_media;
+    phy10g_media_t l_media;
+    mepa_bool_t    channel_high_to_low; /* If Channel id decreasing order w.r.t port number increasing set this to one */
+}phy10g_conf_t;
+
 /** \brief Represents the configuration that is applied to PHY. */
 typedef struct {
     mepa_port_speed_t speed;       /**< Forced port speed */
@@ -186,6 +267,8 @@ typedef struct {
     mepa_bool_t mac_if_aneg_ena;   /**< Enable auto-negotiation on host mac interface */
     mepa_manual_neg_t man_neg;     /**< manual negotiation control in 1G instead of using auto-negotiation */
     mepa_media_mode_t mdi_mode;    /**< Preferred media mode */
+    mepa_phy_media_force_ams_sel_t force_ams_mode_sel; /**< Force AMS Media Select */
+    phy10g_conf_t conf_10g;
 } mepa_conf_t;
 
 /** \brief  MEPA event mask */
@@ -255,16 +338,53 @@ typedef enum {
     MEPA_GPIO_MODE_LED_LINK_TX,
     MEPA_GPIO_MODE_LED_LINK_RX,
     MEPA_GPIO_MODE_LED_LINK_FAULT,
+    MEPA_GPIO_MODE_LED_LINK_NO_ACT_ANY_SPEED,
+    MEPA_GPIO_MODE_LED_LOCAL_RXER_STATUS,
+    MEPA_GPIO_MODE_LED_REMOTE_RXER_STATUS,
+    MEPA_GPIO_MODE_LED_NEGOTIATED_SPEED,
+    MEPA_GPIO_MODE_LED_MASTER_SLAVE_MODE,
+    MEPA_GPIO_MODE_LED_PCS_TX_ERR_STATUS,
+    MEPA_GPIO_MODE_LED_PCS_RX_ERR_STATUS,
+    MEPA_GPIO_MODE_LED_PCS_TX_ACTIVITY,
+    MEPA_GPIO_MODE_LED_PCS_RX_ACTIVITY,
+    MEPA_GPIO_MODE_LED_WAKE_ON_LAN,
     MEPA_GPIO_MODE_LED_DISABLE_EXTENDED,
     MEPA_GPIO_MODE_RCVRD_CLK_OUT1,
     MEPA_GPIO_MODE_RCVRD_CLK_OUT2,
+    MEPA_GPIO_MODE_PUSH_PULL,
+    MEPA_GPIO_MODE_OPEN_SOURCE,
+    MEPA_GPIO_MODE_OPEN_DRAIN,
+    MEPA_GPIO_MODE_ACTIVE_LOW,
+    MEPA_GPIO_MODE_ACTIVE_HIGH,
 } mepa_gpio_mode_t;
 
 /** \brief Led id */
 typedef enum {
     MEPA_LED0 = 0,
-    MEPA_LED1
+    MEPA_LED1,
+    MEPA_LED2,
+    MEPA_LED3
 } mepa_led_num_t;
+
+/** \breif FEFI mode Select */
+typedef enum {
+    MEPA_100FX_FEFI_NORMAL = 0,
+    MEPA_100FX_FEFI_FORCE_SUPPRESS = 2,
+    MEPA_100FX_FEFI_FORCE_ENABLE = 3,
+} mepa_fefi_mode_t;
+
+/** \breif EEE modes */
+typedef enum {
+    MEPA_EEE_DISABLE,
+    MEPA_EEE_ENABLE,
+    MEPA_EEE_REG_UPDATE,
+} mepa_eee_mode_t;
+
+/** \breif EEE configurations */
+typedef struct {
+    mepa_eee_mode_t eee_mode;
+    mepa_bool_t     eee_ena_phy;
+} mepa_phy_eee_conf_t;
 
 /** \brief Additional GPIO data used while setting gpio mode */
 typedef struct {
@@ -336,8 +456,9 @@ typedef struct {
 
 /** \brief mepa trace groups */
 typedef enum {
-    MEPA_TRACE_GRP_GEN,   /**< PHY general features */
-    MEPA_TRACE_GRP_TS,    /**< Timestamp Api */
+    MEPA_TRACE_GRP_GEN,    /**< PHY general features */
+    MEPA_TRACE_GRP_TS,     /**< Timestamp Api */
+    MEPA_TRACE_GRP_MACSEC, /**< MACsec API */
 } mepa_trace_group_t;
 
 typedef struct {
@@ -374,6 +495,7 @@ typedef struct {
     uint16_t             revision;        /**< Chip revision. */
     mepa_phy_cap_t       cap;             /**< PHY capability 1G or 10G phy. */
     mepa_port_no_t       ts_base_port;    /**< Timestamping base port number. VSC-phys like vsc8574 have 2 different timestamping base ports 0 and 1 in a phy. See note above. */
+    void                *ts_base;         /**< Timestamping base port */
 } mepa_phy_info_t;
 
 /** \brief Debug layer */
@@ -431,7 +553,7 @@ typedef enum {
     MEPA_PRBS7, /**< PRBS mode 7 */
     MEPA_PRBS15,/**< PRBS mode 15 */
     MEPA_PRBS31,/**< PRBS mode 31 */
-}mepa_prbs_pattern_t;
+} mepa_prbs_pattern_t;
 
 /** \brief PRBS clock */
 typedef enum {
@@ -458,6 +580,39 @@ typedef struct {
     mepa_prbs_pattern_t  prbsn_sel; /**< PRBS mode selection */
     uint32_t no_of_errors;          /**< Error Generation */
 } mepa_phy_prbs_monitor_conf_t;
+
+/** \brief API version */
+typedef uint16_t mepa_restart_version_t;
+
+/** \brief Restart type */
+typedef enum {
+    MEPA_RESTART_COLD, /**< Cold: Chip and CPU restart, e.g. power cycling */
+    MEPA_RESTART_COOL, /**< Cool: Chip and CPU restart done by CPU */
+    MEPA_RESTART_WARM  /**< Warm: CPU restart only */
+} mepa_restart_t;
+
+/** \brief Restart status */
+typedef struct {
+    mepa_restart_t restart;      /**< Previous restart mode */
+    mepa_restart_t prev_version; /**< Previous API version */
+    mepa_restart_t cur_version;  /**< Current API version */
+} mepa_restart_status_t;
+
+/** \brief Restart info */
+typedef struct {
+    mepa_restart_t         restart_cur;      /* Current restart configuration */
+    mepa_restart_t         restart_prev;    /* Previous restart configuration */
+    mepa_restart_version_t version_cur;     /* Current version */
+    mepa_restart_version_t  version_prev;    /* Previous version */
+} mepa_restart_info_t;
+
+/** \brief Capability info */
+typedef enum {
+    MEPA_CAP_MACSEC_SECY_CNT = 100000000, /* MACSec Secy count */
+    MEPA_CAP_MACSEC_MAX_SA,               /* MACSec Max SA */
+    MEPA_CAP_MACSEC_MAX_SC                /* MACSec Max SC */
+} mepa_cap_t;
+
 
 #include <microchip/ethernet/hdr_end.h>  /**< ALL INCLUDE ABOVE THIS LINE */
 #endif /**< _MICROCHIP_ETHERNET_PHY_API_TYPES_H_ */

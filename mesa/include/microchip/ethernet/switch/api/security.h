@@ -100,15 +100,23 @@ typedef enum
     MESA_ACL_PTP_RSP_DLY_REQ_RSP_NO_TS   // Auto response to Delay_Req, exludes receiveTimestamp update
 } mesa_acl_ptp_rsp_t CAP(ACL_SIP_CNT);
 
+// ACL PTP RedBox forwarding
+typedef struct {
+    mesa_bool_t enable; // Enable processing
+    mesa_bool_t srcid;  // SourcePortIdentity forwarding
+    mesa_bool_t reqid;  // RequestingPortIdentity forwarding
+} mesa_acl_ptp_rb_fwd_t;
+
 // ACL PTP action configuration
 typedef struct {
-    mesa_acl_ptp_rsp_t response;             // PTP Delay_Req/Response action
-    int8_t             log_message_interval; // PTP logMessageInterval [-8,7] returned in the Delay_Resp message
-    mesa_bool_t        copy_smac_to_dmac;    // PTP DMAC operation
-    mesa_bool_t        set_smac_to_port_mac; // PTP SMAC operation
-    uint8_t            dom_sel;              // PTP domain selector. PTP_DOM_SEL indexes the PTP configuration
-    mesa_udp_tcp_t     sport;                // UDP source port
-    mesa_udp_tcp_t     dport;                // UDP destination port
+    mesa_acl_ptp_rsp_t    response;             // PTP Delay_Req/Response action
+    int8_t                log_message_interval; // PTP logMessageInterval [-8,7] returned in the Delay_Resp message
+    mesa_bool_t           copy_smac_to_dmac;    // PTP DMAC operation
+    mesa_bool_t           set_smac_to_port_mac; // PTP SMAC operation
+    uint8_t               dom_sel;              // PTP domain selector. PTP_DOM_SEL indexes the PTP configuration
+    mesa_udp_tcp_t        sport;                // UDP source port
+    mesa_udp_tcp_t        dport;                // UDP destination port
+    mesa_acl_ptp_rb_fwd_t rb_fwd;               // RedBox forwarding
 } mesa_acl_ptp_action_conf_t CAP(ACL_SIP_CNT);
 
 // ACL address update
@@ -117,7 +125,10 @@ typedef enum {
     MESA_ACL_ADDR_UPDATE_MAC_SWAP,         // Swap SMAC and DMAC
     MESA_ACL_ADDR_UPDATE_DMAC_REPLACE,     // Replace DMAC
     MESA_ACL_ADDR_UPDATE_DMAC_REPLACE_MSB, // Replace 40 MSB of DMAC
-    MESA_ACL_ADDR_UPDATE_MAC_IP_SWAP_UC    // Swap MAC addresses if DMAC is unicast. Replace SMAC if DMAC is multicast. Same for SIP/DIP
+    MESA_ACL_ADDR_UPDATE_MAC_IP_SWAP_UC,   // Swap MAC addresses if DMAC is unicast. Replace SMAC if DMAC is multicast. Same for SIP/DIP
+    MESA_ACL_ADDR_UPDATE_IGR_MAC_SWAP,              // Ingress: Swap SMAC and DMAC
+    MESA_ACL_ADDR_UPDATE_IGR_DMAC_SMAC_INCR,        // Ingress: Increment DMAC and SMAC
+    MESA_ACL_ADDR_UPDATE_IGR_DMAC_INCR_SMAC_REPLACE // Ingress: Increment DMAC, replace SMAC
 } mesa_acl_addr_update_t CAP(ACL_SIP_CNT);
 
 // ACL address action configuration
@@ -159,9 +170,10 @@ typedef enum {
 
 // ACL key generation for ARP/IPv4/IPv6 frames
 typedef struct {
-    mesa_acl_key_t arp;  // ARP frame key
-    mesa_acl_key_t ipv4; // IPv4 frame key
-    mesa_acl_key_t ipv6; // IPv6 frame key
+    mesa_acl_key_t etype; // ETYPE/LLC/SNAP frame key
+    mesa_acl_key_t arp;   // ARP frame key
+    mesa_acl_key_t ipv4;  // IPv4 frame key
+    mesa_acl_key_t ipv6;  // IPv6 frame key
 } mesa_acl_frame_key_t;
 
 // ACL port configuration
@@ -313,6 +325,7 @@ typedef struct
 // Frame data for MESA_ACE_TYPE_ARP
 typedef struct
 {
+    mesa_ace_u48_t dmac;       // DMAC, MESA_ACL_KEY_EXT
     mesa_ace_u48_t smac;       // SMAC
     mesa_ace_bit_t arp;        // Opcode ARP/RARP
     mesa_ace_bit_t req;        // Opcode request/reply

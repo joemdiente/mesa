@@ -498,7 +498,7 @@ static vtss_rc srvl_ts_delay_asymmetry_set(vtss_state_t *vtss_state, vtss_port_n
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no)
+static vtss_rc srvl_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL mode_domain_config)
 {
     vtss_ts_mode_t mode = vtss_state->ts.port_conf[port_no].mode.mode;
     u32 ana_mode = 0;
@@ -722,6 +722,7 @@ static vtss_rc srvl_ts_status_change(vtss_state_t         *vtss_state,
                    VTSS_F_DEV_PORT_MODE_PTP_PREDICT_CFG_PTP_PHASE_PREDICT_CFG(1));
             break;
         case VTSS_PORT_INTERFACE_VAUI:
+        case VTSS_PORT_INTERFACE_SGMII_2G5:
             /* SerDes 2.5G */
             if (port >= 5 && port <= 6) {
                 rx_delay = 220;
@@ -820,6 +821,7 @@ static vtss_rc srvl_ts_status_change(vtss_state_t         *vtss_state,
             }
             break;
         case VTSS_PORT_INTERFACE_VAUI:
+        case VTSS_PORT_INTERFACE_SGMII_2G5:
             /* SerDes 2.5G */
             if (port == 5 || port == 8 || port == 10) {
                 rx_delay += 50 - 80;
@@ -1237,6 +1239,12 @@ VTSS_D("io pin %d, pin cfg: %u, domain: %u, freq: %u", io, ext_io_mode->pin, ext
     }
     return VTSS_RC_OK;
 #endif
+}
+
+vtss_rc vtss_cil_ts_conf_set(struct vtss_state_s *vtss_state,
+                             const vtss_ts_conf_t *const conf)
+{
+    return VTSS_RC_OK;
 }
 
 /* - Initialization ------------------------------------------------ */

@@ -233,7 +233,10 @@ typedef struct {
                                             const u32                   addr,
                                             u32                         value);
    vtss_rc (* malibu_phy_10g_event_enable) (struct vtss_state_s  *vtss_state,
-                                             const vtss_port_no_t port_no);
+                                             const vtss_port_no_t port_no,
+                                             BOOL event_enable,
+                                             BOOL extended_event_enable,
+                                             BOOL extended2_event_enable);
    vtss_rc (* malibu_phy_10g_power_set) (struct vtss_state_s *vtss_state,
                                        vtss_port_no_t port_no);
    vtss_rc (* malibu_phy_10g_base_kr_conf_set) (struct vtss_state_s *vtss_state,
@@ -246,6 +249,9 @@ typedef struct {
    vtss_rc (* malibu_phy_10g_extended_event_poll) (struct vtss_state_s      *vtss_state,
                                            const vtss_port_no_t             port_no,
                                            vtss_phy_10g_extnd_event_t       *const ex_events);
+   vtss_rc (* malibu_phy_10g_extended2_event_poll) (struct vtss_state_s     *vtss_state,
+                                           const vtss_port_no_t             port_no,
+                                           vtss_phy_10g_extnd2_event_t     *const ex_events);
    vtss_rc (* malibu_phy_10g_host_recvrd_clk_set) (struct vtss_state_s *vtss_state,
                                        vtss_port_no_t port_no);
    vtss_rc (* malibu_phy_10g_pcs_status_get) (struct vtss_state_s *vtss_state,
@@ -453,6 +459,7 @@ typedef struct vtss_state_s {
 #endif
 #if defined(VTSS_FEATURE_MACSEC)
     vtss_macsec_internal_conf_t macsec_conf[VTSS_PORT_ARRAY_SIZE];
+    vtss_macsec_port_capability macsec_capability[VTSS_PORT_ARRAY_SIZE];
 #endif
 #if defined(VTSS_OPT_PHY_TIMESTAMP)
     vtss_phy_ts_port_conf_t  phy_ts_port_conf[VTSS_PORT_ARRAY_SIZE];
@@ -471,6 +478,7 @@ typedef struct vtss_state_s {
     u32                           phy_chip_no;     /* Support counter for determining chip number */
     vtss_phy_10g_port_state_t     phy_10g_state[VTSS_PORT_ARRAY_SIZE];
     void                          *phy_10g_generic;    /* Generic pointer, Refer to bug#18201 */
+    ioreg_blk mal_io_var; /* temporary structures used in Malibu register read/write in phys */
 #endif
     vtss_cil_func_t               cil;
 } vtss_phy_state_t;
@@ -545,7 +553,6 @@ extern vtss_phy_trace_func_t vtss_phy_trace_func;
 #if VTSS_OPT_PHY_TRACE
 
 #define VTSS_TRACE_GROUP_PHY    VTSS_PHY_TRACE_GROUP_DEFAULT
-#define VTSS_TRACE_GROUP_MACSEC VTSS_PHY_TRACE_GROUP_DEFAULT
 
 #define VTSS_TRACE_LAYER_CIL    VTSS_PHY_TRACE_LAYER_CIL
 

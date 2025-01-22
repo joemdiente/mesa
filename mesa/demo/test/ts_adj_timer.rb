@@ -10,8 +10,11 @@ $ts = get_test_setup("mesa_pc_b2b_2x")
 
 check_capabilities do
     $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
-    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")),
-           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5). or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x).")
+    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")),
+           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")} (Lan969x)")
     assert(($ts.ts_external_clock_looped == true),
            "External clock must be looped")
     $cap_epid = $ts.dut.call("mesa_capability", "MESA_CAP_PACKET_IFH_EPID")
@@ -35,25 +38,34 @@ if ($pcb == "8290")
     $external_io_in = 0
     $external_io_out = 3
 end
+if ($pcb == "8398")
+    $external_io_out = 4
+    $external_io_in = 5
+end
 t_i "external_io_in #{$external_io_in}  external_io_out #{$external_io_out}"
 
 
-def get_next_saved_ts
-    test "get_next_saved_ts" do
-    tod0 = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
+def get_saved_ts_diff
+    test "get_saved_ts_diff" do
+    $tod0 = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
     i = 0
-    (0..4).each do |i|
-        sleep(0.3)
-        $tod = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
-        if ($tod[0]["seconds"] != tod0[0]["seconds"])
+    (0..20).each do |i|
+        $tod1 = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
+        if ($tod1[0]["seconds"] == ($tod0[0]["seconds"] + 1))
             break;
         end
-        if (i == 4)
-            t_e("TOD seconds not incrementing")
+        if ($tod1[0]["seconds"] > ($tod0[0]["seconds"] + 1))
+            # When seconds has incremented more than once we take a new sample
+            $tod0 = $tod1.dup
+        end
+        if (i == 10)
+            t_e("TOD seconds not incrementing correctly")
         end
     end
     end
-    $tod[0]
+    nano_diff = $tod1[0]["nanoseconds"] - $tod0[0]["nanoseconds"]
+    t_i "nano_diff #{nano_diff}"
+    return nano_diff
 end
 
 def tod_adj_timer_test(domain_out, domain_in)
@@ -70,6 +82,11 @@ def tod_adj_timer_test(domain_out, domain_in)
             adj_max = 9499999
             diff_high = 951500
             diff_low = 948000
+        end
+        if (misc["core_clock_freq"] == "MESA_CORE_CLOCK_328MHZ")
+            adj_max = 6231998
+            diff_high = 624184
+            diff_low = 621888
         end
         if (misc["core_clock_freq"] == "MESA_CORE_CLOCK_250MHZ")
             adj_max = 4749999
@@ -94,7 +111,14 @@ def tod_adj_timer_test(domain_out, domain_in)
         diff_high = 240114
         diff_low = 239885
     end
+    if ($pcb == "6849-Sunrise")
+        diff_no_adj = 12
+        adj_max = 1300000
+        diff_high = 130100
+        diff_low = 129900
+    end
 
+    t_i "diff_high #{diff_high}  diff_low #{diff_low}  adj_max #{adj_max}"
     #domain_out == 3 indicates use of default domain API
     domain_def = (domain_out == 3) ? true : false
     if (domain_def)
@@ -125,11 +149,10 @@ def tod_adj_timer_test(domain_out, domain_in)
     pin_conf["pin"] = "MESA_TS_EXT_IO_MODE_ONE_PPS_OUTPUT"
     pin_conf["freq"] = 0
     $ts.dut.call("mesa_ts_external_io_mode_set", $external_io_out, pin_conf)
+    sleep 1.5
 
-    ts0 = get_next_saved_ts
-    ts1 = get_next_saved_ts
+    diff = get_saved_ts_diff
 
-    diff = ts0["nanoseconds"] - ts1["nanoseconds"]
     t_i("Difference #{diff}")
     if ((diff > diff_no_adj) || (diff < -diff_no_adj))
         t_e("Difference is not as expected")
@@ -137,29 +160,21 @@ def tod_adj_timer_test(domain_out, domain_in)
 
     t_i("Set frequency adjustment to maximum positive")
     domain_def ? $ts.dut.call("mesa_ts_adjtimer_set", adj_max) : $ts.dut.call("mesa_ts_domain_adjtimer_set", domain_out, adj_max)
+    sleep 1.5
 
-    ts0 = get_next_saved_ts
-    ts1 = get_next_saved_ts
-
-    diff = ts0["nanoseconds"] - ts1["nanoseconds"]
+    diff = get_saved_ts_diff
     t_i("Difference #{diff}")
-    if (diff > diff_high) || (diff < diff_low)
+    if (diff.abs > diff_high) || (diff.abs < diff_low)
         t_e("Difference is not as expected")
     end
 
     t_i("Set frequency adjustment to maximum negative")
     domain_def ? $ts.dut.call("mesa_ts_adjtimer_set", -adj_max) : $ts.dut.call("mesa_ts_domain_adjtimer_set", domain_out, -adj_max)
+    sleep 1.5
 
-    ts0 = get_next_saved_ts
-    ts1 = get_next_saved_ts
-
-    # Get TOD on 1PPS input pin
-    tod = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
-    ts1 = tod[0]
-
-    diff = ts1["nanoseconds"] - ts0["nanoseconds"]
+    diff = get_saved_ts_diff
     t_i("Difference #{diff}")
-    if (diff > diff_high) || (diff < diff_low)
+    if (diff.abs > diff_high) || (diff.abs < diff_low)
         t_e("Difference is not as expected")
     end
 

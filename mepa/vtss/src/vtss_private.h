@@ -66,6 +66,7 @@ typedef struct {
 
 typedef struct {
     mepa_bool_t          dly_req_recv_10byte_ts;
+    mepa_bool_t          tx_fifo_spi_conf;
     u8                   rx_flow_clk[24]; // TS_FLOWS_PER_ENG * 3(total engines in 1588 block)
     u8                   tx_flow_clk[24]; // TS_FLOWS_PER_ENG * 3(total engines in 1588 block)
 } phy_ts_data_t;
@@ -82,5 +83,6 @@ typedef struct {
     mepa_device_t *ts_base_dev;
     mepa_device_t *ts_alt_dev;
     vtss_inst_t    vtss_instance;
+    mepa_bool_t    temp_init_flag;// Used for initializing temperature only once for a port.
 } phy_data_t;
 

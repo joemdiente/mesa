@@ -320,7 +320,9 @@ static uint32_t get_fa_port_cnt_default(uint32_t target, uint32_t pcb)
 
 static void get_fa_board_name(uint32_t cnt, mesa_bool_t sparx5i, uint32_t pcb, char *buf)
 {
-    char str[10];
+    char str[15];
+
+    memset(str, 0, sizeof(str));
     if (buf != NULL) {
         strcpy(buf, sparx5i ? "SparX-5i-" : "SparX-5-");
         if (pcb == 125) {
@@ -436,11 +438,16 @@ static mesa_rc board_conf_get(const char *tag, char *buf, size_t bufsize, size_t
         break;
 
     case MESA_CHIP_FAMILY_OCELOT:
-        // TODO, it currently assumes that we are PCB123
+        // Currently only supporting: 7513/mux_mode_0 and 7514/mux_mode_4
+#if defined(VTSS_CHIP_7514)
+        target = 0x7514;
+        mux_mode = MESA_PORT_MUX_MODE_4;
+#else
+        target = 0x7513;
+        mux_mode = MESA_PORT_MUX_MODE_0;
+#endif
         board = "Ocelot Ref (pcb123)";
-        mux_mode = 1;
         break;
-
     case MESA_CHIP_FAMILY_JAGUAR2:
         if (REF_BOARD_PCB == -1) {
             if (!get_env("pcb", &REF_BOARD_PCB)) {
@@ -493,7 +500,15 @@ static mesa_rc board_conf_get(const char *tag, char *buf, size_t bufsize, size_t
     case MESA_CHIP_FAMILY_LAN966X:
         // Device-tree is expected
         break;
-
+    case MESA_CHIP_FAMILY_LAN969X:
+        // Device-tree is expected for 'pcb' and 'target'
+        // port count is either default or controlled from UBOOT (pcb_var)
+        if (!get_env("pcb_var", &REF_BOARD_PORT_COUNT)) {
+            T_D("Using default port count\n");
+        } else {
+            board_port_cnt = REF_BOARD_PORT_COUNT;
+        }
+        break;
     default:
         break;
     }
@@ -509,7 +524,7 @@ static mesa_rc board_conf_get(const char *tag, char *buf, size_t bufsize, size_t
     } else if (LOOP_PORT >= 0 && strcmp(tag, "mep_loop_port") == 0) {
         len = snprintf(buf, bufsize, "%u", LOOP_PORT); // The loop port is internal port LOOP_PORT
     } else if (strcmp(tag, "pcb") == 0 && type != PCB_TYPE_NONE) {
-        len = snprintf(buf, bufsize, "pcb%u", type);
+        len = snprintf(buf, bufsize, "%u", type);
     } else if (strcmp(tag, "pcb_var") == 0 && board_port_cnt < 1000) {
         len = snprintf(buf, bufsize, "%u", board_port_cnt);
     }
@@ -1126,7 +1141,9 @@ int main(int argc, char **argv)
     conf.serdes_tap_get = serdes_tap_get;
     if (mesa_capability(NULL, MESA_CAP_INIT_CORE_CLOCK)) {
         conf.core_clock.freq = assign_core_clock(meba_inst->props.target);
+        conf.core_clock.ref_freq = meba_inst->props.ref_freq;
     }
+
     if (mesa_init_conf_set(NULL, &conf) != MESA_RC_OK) {
         T_E("mesa_init_conf_set() failed");
         return 1;

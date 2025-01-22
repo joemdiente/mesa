@@ -7,9 +7,6 @@
 
 #if defined(VTSS_ARCH_FA)
 
-#include "vtss_fa_regs.h"
-#include "vtss_fa_kernel_regs.h"
-
 /* Commands for Mac Table Command register */
 #define MAC_CMD_LEARN         0 /* Insert (Learn) 1 entry */
 #define MAC_CMD_UNLEARN       1 /* Unlearn (Forget) 1 entry */

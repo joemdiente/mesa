@@ -51,17 +51,28 @@
 #define VTSS_VCAP_SUPER_RULE_CNT (VTSS_VCAP_SUPER_BLK_CNT * VTSS_VCAP_SUPER_ROW_CNT * 8) /* Eight rules per row */
 #endif /* VTSS_ARCH_JAGUAR_2 */
 
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+#define VTSS_FEATURE_VCAP_SUPER      /* VCAP_SUPER pool */
+#define VTSS_FEATURE_CLM             /* VCAP CLM */
+#define VTSS_FEATURE_ES0             /* VCAP ES0 */
+#define VTSS_FEATURE_LPM             /* VCAP LPM */
 #define VTSS_FEATURE_IS2             /* VCAP IS2 */
 #define VTSS_FEATURE_IS2_B           /* VCAP IS2_B */
-#define VTSS_FEATURE_ES0             /* VCAP ES0 */
+#if !VTSS_OPT_LIGHT
 #define VTSS_FEATURE_ES2             /* VCAP ES2 */
-#define VTSS_FEATURE_CLM             /* VCAP CLM */
-#define VTSS_FEATURE_LPM             /* VCAP LPM */
-#define VTSS_FEATURE_VCAP_SUPER      /* VCAP_SUPER pool */
+#endif
+#if defined(VTSS_ARCH_SPARX5)
 #define VTSS_VCAP_SUPER_BLK_CNT  10  /* Number of VCAP_SUPER blocks */
-#define VTSS_VCAP_SUPER_ROW_CNT  256 /* Number of rows in one VCAP super block (full rules) */
+#else
+#define VTSS_VCAP_SUPER_BLK_CNT  6  /* Number of VCAP_SUPER blocks */
+#endif
+#define VTSS_VCAP_SUPER_ROW_CNT  256 /* Number of rows in one block (full rules) */
+#if defined(VTSS_STREAM_CNT)
+// Full CLM rules, X1 LPM rules, full IS2 rules
+#define VTSS_VCAP_SUPER_RULE_CNT (VTSS_STREAM_CNT + VTSS_LPM_CNT + VTSS_ACE_CNT)
+#else
 #define VTSS_VCAP_SUPER_RULE_CNT (VTSS_VCAP_SUPER_BLK_CNT * VTSS_VCAP_SUPER_ROW_CNT * 6) /* Six rules per row */
+#endif
 #endif
 
 /** \brief VCAP key size */
@@ -145,7 +156,7 @@ typedef enum {
 #endif
 
     /* IS1 users */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     VTSS_IS1_USER_MPLS_LL,       /* MPLS link layer */
     VTSS_IS1_USER_MPLS_MLBS,     /* MPLS label stack, single label */
     VTSS_IS1_USER_MCE_0,         /* MCE_0 (First MCE user) */
@@ -154,7 +165,7 @@ typedef enum {
 #endif
     VTSS_IS1_USER_VCL,           /* VCL (first lookup) */
     VTSS_IS1_USER_VLAN,          /* VLAN translation (first lookup) */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     VTSS_IS1_USER_MCE_1,         /* MCE_1 (Second MCE user) */
     VTSS_IS1_USER_MCE_2,         /* MCE_2 (Third MCE user) */
     VTSS_IS1_USER_MCE_3,         /* MCE_3 (Fourth MCE user) */
@@ -187,13 +198,13 @@ typedef enum {
 
     /* ES0 users */
     VTSS_ES0_USER_TCL,      /* Tag Control List */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     VTSS_ES0_USER_MCE_0,    /* MCE_0 (First MCE user) */
 #else
     VTSS_ES0_USER_TT_LOOP,  /* TT_LOOP (first lookup) */
 #endif
     VTSS_ES0_USER_VLAN,     /* VLAN translation */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     VTSS_ES0_USER_MCE_1,    /* MCE_1 (Second MCE user) */
     VTSS_ES0_USER_MCE_2,    /* MCE_2 (Third MCE user) */
     VTSS_ES0_USER_MCE_3,    /* MCE_3 (Fourth MCE user) */
@@ -215,7 +226,7 @@ typedef enum {
     VTSS_ES2_USER_EPACL,    /* E-PACL */
 } vtss_vcap_user_t;
 
-#if defined(VTSS_FEATURE_MPLS) && defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_FEATURE_MPLS) && defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_MPLS_IN_ENCAP_LABEL_CNT    3       /* Number of HW labels supported at ingress */
 #define VTSS_MPLS_OUT_ENCAP_LABEL_CNT   3       /* Number of HW labels supported at egress */
 #endif
@@ -448,10 +459,11 @@ typedef struct {
 #if defined(VTSS_ARCH_OCELOT)
     BOOL            oam_enable;     /**< OAM detection enable */
 #endif /* VTSS_ARCH_OCELOT */
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     vtss_oam_detect_t oam_detect;   /**< OAM detection */
+    BOOL              mrp_enable;   /**< MRP enable */
 #endif /* VTSS_ARCH_OCELOT || VTSS_ARCH_JAGUAR_2 */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_vid_t      gvid;           /**< Classified GVID */
     BOOL            mip_enable;     /**< OAM hitting MIP enable */
     u8              pipe_enable;    /**< Pipeline_force_enable */
@@ -484,7 +496,9 @@ typedef struct {
     u16                    sfid;
     BOOL                   sgid_enable;
     u16                    sgid;
+#if defined(VTSS_FEATURE_RCL)
     vtss_rce_action_t      rce_action;
+#endif
 #endif
 } vtss_is1_action_t;
 
@@ -580,13 +594,13 @@ typedef struct {
 typedef struct {
     vtss_is1_type_t      type;      /**< Frame type */
 
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     vtss_vcap_key_type_t key_type;  /**< Key type */
 #endif /* VTSS_ARCH_OCELOT/JAGUAR_2/VTSS_ARCH_SPARX5/VTSS_ARCH_LAN966X */
 #if defined(VTSS_ARCH_OCELOT)
     vtss_vcap_u16_t      isdx;      /**< ISDX */
 #endif /* VTSS_ARCH_OCELOT */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_vcap_vid_t      g_idx;        /**< The 'nxt_idx' generated by previous IS1 action can match against this key */
     BOOL                 cpu_port;     /**< Match CPU port */
     BOOL                 looped;       /**< Only Frames looped can hit */
@@ -739,7 +753,7 @@ typedef struct {
 typedef struct {
     u32              srange;       /* Source port range */
     u32              drange;       /* Destination port range */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     u16              cnt_id;       /* Counter ID */
 #endif
 #if defined(VTSS_ARCH_LUTON26)
@@ -775,10 +789,10 @@ typedef enum {
     VTSS_ES0_QOS_MAPPED
 } vtss_es0_qos_t;
 
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
 
 #if defined(VTSS_FEATURE_MPLS)
-#if defined(VTSS_CHIP_LYNX_2) || defined(VTSS_CHIP_JAGUAR_2) || defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_CHIP_LYNX_2) || defined(VTSS_CHIP_JAGUAR_2) || defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_MPLS_OUT_ENCAP_CNT         1023    /* Number of HW entries */
 #elif defined(VTSS_CHIP_SERVAL_2)
 #define VTSS_MPLS_OUT_ENCAP_CNT         511     /* Number of HW entries */
@@ -851,11 +865,11 @@ typedef enum {
 
 /* ES0 action */
 typedef struct {
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     /* For Serval, the following two fields replace the tag related fields below */
     vtss_es0_tag_conf_t       outer_tag;
     vtss_es0_tag_conf_t       inner_tag;
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     BOOL                      mep_idx_enable;
     u16                       mep_idx;
     u32                       mpls_encap_idx;
@@ -876,7 +890,7 @@ typedef struct {
     u32             esdx_cosid_offset; /* Jaguar-2 only */
     u8              pop_cnt;         /* Egress pop count */
 
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_voi_idx_t  voi_idx;         /* VOI index */
     u8              forward_sel;     /* FWD_SEL action */
     u8              pipe_pt;         /* PIPELINE_PT action */
@@ -977,7 +991,7 @@ typedef struct {
 #if defined(VTSS_FEATURE_MPLS) && defined(VTSS_ARCH_JAGUAR_2)
     u16              mpls_encap_idx; /* MPLS encapsulation index. 0 if unused */
 #endif /* VTSS_FEATURE_MPLS */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     u16              esdx;      /* Egress statistics */
 #endif
 #if defined(VTSS_FEATURE_XFLOW)
@@ -1021,7 +1035,9 @@ typedef struct vtss_vcap_entry_t {
     vtss_vcap_user_t         user;  /* User */
     vtss_vcap_id_t           id;    /* Entry ID */
     vtss_vcap_data_t         data;  /* Entry data */
+#if !VTSS_OPT_LIGHT
     void                     *copy; /* Entry copy. Points to a copy of entry key/action (or NULL if not needed). */
+#endif
 } vtss_vcap_entry_t;
 
 /* VCAP rule index */
@@ -1082,7 +1098,12 @@ typedef struct {
 #define VTSS_VCAP_ID_GT   0xffffffffffffffff
 
 /* VCAP ranges */
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+// IS2/ES2 have more range checkers
+#define VTSS_VCAP_RANGE_CHK_CNT 16
+#else
 #define VTSS_VCAP_RANGE_CHK_CNT 8
+#endif
 #define VTSS_VCAP_RANGE_CHK_NONE 0xffffffff
 
 /* VCAP range checker type */
@@ -1105,6 +1126,7 @@ typedef struct {
 
 /* VCAP range checker table */
 typedef struct {
+    u32                   max;
     vtss_vcap_range_chk_t entry[VTSS_VCAP_RANGE_CHK_CNT];
 } vtss_vcap_range_chk_table_t;
 
@@ -1131,7 +1153,9 @@ typedef struct {
 #if defined(VTSS_ARCH_OCELOT)
 #define VTSS_IS1_CNT      VTSS_SRVL_IS1_CNT
 #elif defined(VTSS_ARCH_LAN966X)
-#if defined(VTSS_ARCH_LAN966X_FPGA)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_LAN966X_IS1_CNT (VTSS_STREAM_CNT * 4)
+#elif defined(VTSS_ARCH_LAN966X_FPGA)
 #define VTSS_LAN966X_IS1_CNT (16 * 4)
 #else
 #define VTSS_LAN966X_IS1_CNT (192 * 4)
@@ -1146,7 +1170,9 @@ typedef struct {
     vtss_vcap_obj_t   obj;                 /* Object */
     vtss_vcap_entry_t table[VTSS_IS1_CNT]; /* Table */
 #if defined(VTSS_OPT_WARM_START) || defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_LAN966X)
+#if !VTSS_OPT_LIGHT
     vtss_is1_entry_t  copy[VTSS_IS1_CNT];  /* Copy of entries */
+#endif
 #endif /* VTSS_OPT_WARM_START */
 } vtss_is1_info_t;
 #endif /* VTSS_FEATURE_IS1 */
@@ -1186,7 +1212,7 @@ typedef struct {
 #elif defined(VTSS_ARCH_JAGUAR_2)
 #define VTSS_IS2_CNT      0 /* VCAP_SUPER is used */
 #define VTSS_ACL_CNT_SIZE 4096
-#elif defined(VTSS_ARCH_SPARX5)
+#elif defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_IS2_CNT      0 /* VCAP_SUPER is used */
 #define VTSS_ACL_CNT_SIZE 4096 /* IS2_A/IS2_B */
 #define VTSS_ES2_CNT_SIZE 2048 /* ES2 */
@@ -1218,14 +1244,22 @@ typedef struct {
 #elif defined(VTSS_ARCH_OCELOT)
 #define VTSS_ES0_CNT VTSS_SRVL_ES0_CNT
 #elif defined(VTSS_ARCH_LAN966X)
-#if defined(VTSS_ARCH_LAN966X_FPGA)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_LAN966X_ES0_CNT VTSS_STREAM_CNT
+#elif defined(VTSS_ARCH_LAN966X_FPGA)
 #define VTSS_LAN966X_ES0_CNT 16
 #else
 #define VTSS_LAN966X_ES0_CNT 256
 #endif
 #define VTSS_ES0_CNT VTSS_LAN966X_ES0_CNT
-#elif defined(VTSS_ARCH_SPARX5)
+#elif defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_FA_ES0_CNT VTSS_STREAM_CNT
+#elif defined(VTSS_ARCH_LAN969X)
+#define VTSS_FA_ES0_CNT 1536
+#else
 #define VTSS_FA_ES0_CNT 4096
+#endif
 #define VTSS_ES0_CNT    VTSS_FA_ES0_CNT
 #else
 #define VTSS_ES0_CNT VTSS_L26_ES0_CNT
@@ -1241,8 +1275,13 @@ typedef struct {
 } vtss_es0_info_t;
 #endif /* VTSS_FEATURE_ES0 */
 
-#if defined(VTSS_FEATURE_ES2)
+#if defined(VTSS_ARCH_SPARX5)
 #define VTSS_FA_ES2_CNT 2048 /* 1024 rows allowing 2048 half rules */
+#else
+#define VTSS_FA_ES2_CNT 512  /* 512 rows allowing 256 half rules */
+#endif
+
+#if defined(VTSS_FEATURE_ES2)
 #define VTSS_ES2_CNT    VTSS_FA_ES2_CNT
 
 /* ES2 information */
@@ -1289,9 +1328,10 @@ typedef struct {
                                  const vtss_eflow_id_t flow_id);
 #endif
 #endif /* VTSS_FEATURE_ES0 */
+#if defined(VTSS_FEATURE_IS2)
     vtss_rc (* acl_policer_set)(struct vtss_state_s *vtss_state,
                                 const vtss_acl_policer_no_t policer_no);
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_rc (* acl_sip_set)(struct vtss_state_s *vtss_state,
                             const vtss_acl_sip_idx_t idx);
 #endif
@@ -1317,6 +1357,7 @@ typedef struct {
                                    const vtss_ace_id_t ace_id,
                                    vtss_ace_status_t   *const status);
 #endif /* VTSS_ARCH_LUTON26 */
+#endif // VTSS_FEATURE_IS2
 #if defined(VTSS_FEATURE_HACL)
     vtss_rc (* hace_add)(struct vtss_state_s *vtss_state,
                          const vtss_hacl_type_t type,
@@ -1367,27 +1408,31 @@ typedef struct {
     vtss_clm_info_t               lpm;
 #endif /* VTSS_FEATURE_LPM */
     vtss_vcap_user_t              acl_user;
+#if defined(VTSS_FEATURE_IS2)
     vtss_acl_policer_conf_t       acl_policer_conf[VTSS_ACL_POLICERS];
 #if defined(VTSS_ARCH_LUTON26)
     vtss_policer_alloc_t          acl_policer_alloc[VTSS_ACL_POLICERS];
 #endif /* VTSS_ARCH_LUTON26 */
     vtss_acl_port_conf_t          acl_old_port_conf;
     vtss_acl_port_conf_t          acl_port_conf[VTSS_PORT_ARRAY_SIZE];
+#endif // VTSS_FEATURE_IS2
 #if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_LAN966X)
     vtss_vcap_port_conf_t         port_conf[VTSS_PORT_ARRAY_SIZE];
     vtss_vcap_port_conf_t         port_conf_old;
     vtss_dmac_dip_conf_t          dmac_dip_conf[VTSS_PORT_ARRAY_SIZE];/* Aggregated dmac_dip flag - per port per IS1 lookup */
 #endif
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_FEATURE_IS2)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_acl_sip_conf_t           acl_sip_table[VTSS_ACL_SIP_CNT];
     u8 acl_cnt_alloc[VTSS_BF_SIZE(VTSS_ACL_CNT_SIZE)];
 #endif
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_vcap_range_chk_table_t   is2_range;
     vtss_vcap_range_chk_table_t   es2_range;
     u8 is2b_cnt_alloc[VTSS_BF_SIZE(VTSS_ACL_CNT_SIZE)];
     u8 es2_cnt_alloc[VTSS_BF_SIZE(VTSS_ES2_CNT_SIZE)];
 #endif
+#endif // VTSS_FEATURE_IS2
 } vtss_vcap_state_t;
 
 vtss_rc vtss_vcap_inst_create(struct vtss_state_s *vtss_state);
@@ -1407,7 +1452,7 @@ vtss_rc vtss_vcap_range_free(vtss_vcap_range_chk_table_t *range_chk_table,
                              u32 range);
 vtss_rc vtss_vcap_udp_tcp_range_alloc(vtss_vcap_range_chk_table_t *range_chk_table,
                                       u32 *range,
-                                      const vtss_vcap_udp_tcp_t *port,
+                                      vtss_vcap_udp_tcp_t *port,
                                       BOOL sport);
 BOOL vtss_vcap_vr_rng2vm(vtss_vcap_vr_t *vr);
 vtss_rc vtss_vcap_vr_alloc(vtss_vcap_range_chk_table_t *range_chk_table,
@@ -1438,12 +1483,15 @@ void vtss_vcap_debug_print_is0(struct vtss_state_s *vtss_state,
 #if defined(VTSS_FEATURE_IS1) || defined(VTSS_FEATURE_CLM)
 vtss_vcap_obj_t *vtss_vcap_is1_obj_get(struct vtss_state_s *vtss_state);
 void vtss_vcap_is1_init(vtss_vcap_data_t *data, vtss_is1_entry_t *entry);
+#if VTSS_OPT_DEBUG_PRINT
 void vtss_vcap_debug_print_is1(struct vtss_state_s *vtss_state,
                                const vtss_debug_printf_t pr,
                                const vtss_debug_info_t   *const info);
+#endif
 vtss_rc vtss_vcap_is1_update(struct vtss_state_s *vtss_state, vtss_is1_action_t *act);
 #endif /* VTSS_FEATURE_IS1/CLM */
 #if defined(VTSS_FEATURE_CLM)
+#if VTSS_OPT_DEBUG_PRINT
 void vtss_vcap_debug_print_clm_a(struct vtss_state_s *vtss_state,
                                  const vtss_debug_printf_t pr,
                                  const vtss_debug_info_t   *const info);
@@ -1453,6 +1501,7 @@ void vtss_vcap_debug_print_clm_b(struct vtss_state_s *vtss_state,
 void vtss_vcap_debug_print_clm_c(struct vtss_state_s *vtss_state,
                                  const vtss_debug_printf_t pr,
                                  const vtss_debug_info_t   *const info);
+#endif
 vtss_rc vtss_vcap_clm_update(struct vtss_state_s *vtss_state, const vtss_qos_egress_map_id_t id);
 vtss_rc vtss_vcap_clm_update_masq_hit_ena(struct vtss_state_s *vtss_state,
                                           vtss_vcap_obj_t *obj, int user, vtss_vcap_id_t id, BOOL enable);
@@ -1472,17 +1521,21 @@ vtss_rc vtss_vcap_es0_emap_update(struct vtss_state_s *vtss_state, vtss_qos_egre
 #endif /* VTSS_FEATURE_QOS_EGRESS_MAP */
 vtss_rc vtss_vcap_es0_update(struct vtss_state_s *vtss_state,
                              const vtss_port_no_t port_no, u16 flags);
+#if VTSS_OPT_DEBUG_PRINT
 void vtss_vcap_debug_print_es0(struct vtss_state_s *vtss_state,
                                const vtss_debug_printf_t pr,
                                const vtss_debug_info_t   *const info);
+#endif
 #endif /* VTSS_FEATURE_ES0 */
 const char *vtss_vcap_key_size2txt(vtss_vcap_key_size_t key_size);
 const char *vtss_vcap_key_type2txt(vtss_vcap_key_type_t key_type);
 vtss_vcap_key_size_t vtss_vcap_key_type2size(vtss_vcap_key_type_t key_type);
+#if VTSS_OPT_DEBUG_PRINT
 void vtss_vcap_debug_print_range_checkers(struct vtss_state_s *vtss_state,
                                           const vtss_debug_printf_t pr,
                                           const vtss_debug_info_t   *const info);
-
+#endif
+#if defined(VTSS_FEATURE_IS2)
 vtss_rc vtss_cmn_ace_add(struct vtss_state_s *vtss_state,
                          const vtss_ace_id_t ace_id, const vtss_ace_t *const ace);
 vtss_rc vtss_cmn_ace_del(struct vtss_state_s *vtss_state, const vtss_ace_id_t ace_id);
@@ -1490,10 +1543,12 @@ vtss_rc vtss_cmn_ace_counter_get(struct vtss_state_s *vtss_state,
                                  const vtss_ace_id_t ace_id, vtss_ace_counter_t *const counter);
 vtss_rc vtss_cmn_ace_counter_clear(struct vtss_state_s *vtss_state, const vtss_ace_id_t ace_id);
 char *vtss_acl_policy_no_txt(vtss_acl_policy_no_t policy_no, char *buf);
+#endif // VTSS_FEATURE_IS2
+#if VTSS_OPT_DEBUG_PRINT
 void vtss_vcap_debug_print_acl(struct vtss_state_s *vtss_state,
                                const vtss_debug_printf_t pr,
                                const vtss_debug_info_t   *const info);
-
+#endif
 #endif /* VTSS_FEATURE_VCAP */
 
 #endif /* _VTSS_VCAP_STATE_H_ */

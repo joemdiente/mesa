@@ -31,6 +31,9 @@
 
 #define PHY_ID_GPY241 0xDC00
 
+/** \brief Number of Jaguar2 PTP pins, that can be used as 1PPS or clock output/input. */
+#define VTSS_TS_IO_ARRAY_SIZE       4
+
 #define VTSS_MSLEEP(m) usleep((m) * 1000)
 
 /* JR2 Ref board port configurations  */
@@ -78,6 +81,12 @@ typedef struct
 #define PHY10G_SGPIO_GROUP  2
 #define PHY10G_SGPIO_PORT   24
 #define PHY10G_SGPIO_BIT    2
+
+// JR2-24 1G SGPIO RAW INTR
+// VTSS_DEVCPU_GCB_SIO_CTRL_SIO_INTR_RAW(2, 0)
+#define JR2_24_SIO_CTRL_SIO_INTR_RAW_0 0x404108
+// VTSS_DEVCPU_GCB_SIO_CTRL_SIO_INTR_RAW(2, 1)
+#define JR2_24_SIO_CTRL_SIO_INTR_RAW_1 0x404109
 
 /* SGPIO LED mapping */
 typedef struct {
@@ -129,7 +138,7 @@ typedef struct meba_board_state {
 } meba_board_state_t;
 
 static const mesa_fan_conf_t fan_conf = {
-    .fan_pwm_freq = MESA_FAN_PWM_FREQ_20HZ,    // 20MHz
+    .fan_pwm_freq = MESA_FAN_PWM_FREQ_20HZ,    // 20Hz
     .fan_low_pol = 0,                          // active low
     .fan_open_col = true,                      // Open collector
     .type = MESA_FAN_3_WIRE_TYPE,              // 3-wire
@@ -177,16 +186,16 @@ static const meba_ptp_rs422_conf_t other_rs422_conf = {
     .ptp_rs422_ldsv_int_id  = MEBA_EVENT_PTP_PIN_3
 };
 
-static const meba_event_t init_int_source_id[MESA_CAP_TS_IO_CNT] = {MEBA_EVENT_PTP_PIN_0, MEBA_EVENT_PTP_PIN_1, MEBA_EVENT_PTP_PIN_2, MEBA_EVENT_PTP_PIN_3};
+static const meba_event_t init_int_source_id[VTSS_TS_IO_ARRAY_SIZE] = {MEBA_EVENT_PTP_PIN_0, MEBA_EVENT_PTP_PIN_1, MEBA_EVENT_PTP_PIN_2, MEBA_EVENT_PTP_PIN_3};
 
-static const uint32_t pin_conf[MESA_CAP_TS_IO_CNT] = {
+static const uint32_t pin_conf[VTSS_TS_IO_ARRAY_SIZE] = {
 (MEBA_PTP_IO_CAP_PIN_OUT | MEBA_PTP_IO_CAP_PIN_IN),
 (MEBA_PTP_IO_CAP_PHY_SYNC),
 (MEBA_PTP_IO_CAP_TIME_IF_IN | MEBA_PTP_IO_CAP_PIN_IN),
 (MEBA_PTP_IO_CAP_TIME_IF_OUT)
 };
 
-static const uint32_t pin_conf_pcb111[MESA_CAP_TS_IO_CNT] = {
+static const uint32_t pin_conf_pcb111[VTSS_TS_IO_ARRAY_SIZE] = {
 (MEBA_PTP_IO_CAP_PIN_OUT | MEBA_PTP_IO_CAP_PIN_IN),
 (MEBA_PTP_IO_CAP_UNUSED),
 (MEBA_PTP_IO_CAP_PIN_OUT | MEBA_PTP_IO_CAP_PIN_IN),
@@ -397,7 +406,7 @@ static void init_port_cu48(meba_inst_t inst, mesa_port_no_t port_no, meba_port_e
         entry->map.max_bw          = MESA_BW_1G;
         entry->mac_if              = MESA_PORT_INTERFACE_QSGMII;
         entry->cap                 = MEBA_PORT_CAP_TRI_SPEED_COPPER;
-        entry->poe_chip_port       = entry->map.chip_port % 24; // Each PD69200 controller controls 24 ports.
+        entry->poe_port            = entry->map.chip_port % 24; // Each PD69200 controller controls 24 ports.
         entry->poe_support         = true;
     } else if (port_no < 50 &&
                (inst->props.target == MESA_TARGET_SPARX_IV_90 ||
@@ -1835,6 +1844,11 @@ static mesa_rc jr2_reset(meba_inst_t inst,
 {
     meba_board_state_t *board = INST2BOARD(inst);
     mesa_rc rc = MESA_RC_OK;
+    mepa_reset_param_t  rst_conf = {};
+
+    rst_conf.media_intf = MESA_PHY_MEDIA_IF_CU;     // This makes NO Diff at this point
+    rst_conf.reset_point = MEPA_RESET_POINT_DEFAULT;// This is the param being used
+    rst_conf.framepreempt_en = 0;                   // FALSE
     T_D(inst, "Called - %d", reset);
     switch (reset) {
         case MEBA_BOARD_INITIALIZE:
@@ -1848,20 +1862,22 @@ static mesa_rc jr2_reset(meba_inst_t inst,
             break;
         case MEBA_PORT_RESET:
             if (board->port[0].map.map.miim_controller != MESA_MIIM_CONTROLLER_NONE) {
+                rst_conf.reset_point = MEPA_RESET_POINT_PRE;   // This is the param being used for pre-reset
                 if (board->type == BOARD_TYPE_JAGUAR2_CU48) {
-                    if ((rc = vtss_phy_pre_reset(PHY_INST, 0)) == MESA_RC_OK &&
-                        (rc = vtss_phy_pre_reset(PHY_INST, 12)) == MESA_RC_OK &&
-                        (rc = vtss_phy_pre_reset(PHY_INST, 24)) == MESA_RC_OK)
-                        rc = vtss_phy_pre_reset(PHY_INST, 36);
+                    if ((rc = meba_phy_reset(inst, 0,   &rst_conf)) == MESA_RC_OK &&
+                        (rc = meba_phy_reset(inst, 12,  &rst_conf)) == MESA_RC_OK &&
+                        (rc = meba_phy_reset(inst, 24,  &rst_conf)) == MESA_RC_OK)
+                        rc = meba_phy_reset(inst, 36,  &rst_conf);
                 } else if (board->type == BOARD_TYPE_JAGUAR2) {
-                    if ((rc = vtss_phy_pre_reset(PHY_INST, 0)) == MESA_RC_OK)
-                        rc = vtss_phy_pre_reset(PHY_INST, 4);
+                    if ((rc = meba_phy_reset(inst, 0,  &rst_conf)) == MESA_RC_OK)
+                        rc = meba_phy_reset(inst, 4,  &rst_conf);
                 } else if (board->type == BOARD_TYPE_SERVAL2_NID) { // This board has a Viper or a Tesla See schematics
-                    rc = vtss_phy_pre_reset(PHY_INST, 0);
+                    rc = meba_phy_reset(inst, 0,  &rst_conf);
                 } else if( board->type == BOARD_TYPE_JAGUAR2_AQR) {
                     jr2_hard_reset_wait_aqr(inst);
                 }
             }
+
             if (board->malibu_present) {
                 /* Initlize the 10G Malibu Phy */
                 malibu_init(inst);
@@ -2069,7 +2085,7 @@ static mesa_rc jr2_sfp_i2c_xfer(meba_inst_t inst,
 {
     mesa_rc rc = MESA_RC_OK;
     meba_board_state_t *board = INST2BOARD(inst);
-    uint16_t value;
+    uint8_t value;
     uint8_t idx;
     T_N(inst, "Called");
     if (board->malibu_present && (port_no >= 24 && port_no < 28)) {
@@ -2092,9 +2108,9 @@ static mesa_rc jr2_sfp_i2c_xfer(meba_inst_t inst,
         }
     } else if (board->port[port_no].map.cap & MEBA_PORT_CAP_DUAL_COPPER) {
         if (write) {
-            rc = vtss_phy_i2c_write(NULL, port_no, port_no, addr, i2c_addr, data, 2, word_access);
+	    rc = vtss_phy_i2c_write(NULL, port_no, port_no, addr, i2c_addr, word_access, 2, data);
         } else {
-            rc = vtss_phy_i2c_read(NULL, port_no, port_no, addr, i2c_addr, data, cnt, word_access);
+            rc = vtss_phy_i2c_read(NULL, port_no, port_no, addr, i2c_addr, word_access, cnt, data);
         }
     } else {
         uint32_t chip_port = board->port[port_no].map.map.chip_port;
@@ -2620,7 +2636,7 @@ static mesa_rc jr2_fan_param_get(meba_inst_t inst,
                                  meba_fan_param_t *param)
 {
     T_N(inst, "Called");
-    param->start_time = 100;
+    param->start_time = 5;
     param->start_level = 60;
     param->min_pwm = 30;
     return MESA_RC_OK;
@@ -2657,7 +2673,7 @@ static mesa_rc jr2_ptp_external_io_conf_get(meba_inst_t inst, uint32_t io_pin, m
     mesa_rc rc = MESA_RC_OK;
     meba_board_state_t *board = INST2BOARD(inst);
 
-    if (io_pin >= MESA_CAP_TS_IO_CNT) {
+    if (io_pin >= VTSS_TS_IO_ARRAY_SIZE) {
         return MESA_RC_ERROR;
     }
 
@@ -2732,7 +2748,7 @@ static mesa_rc jr2_event_enable(meba_inst_t inst,
     mesa_port_no_t        port_no;
     uint32_t              bit;
 
-    T_I(inst, "%sable event %d", enable ? "en" : "dis", event_id);
+    T_D(inst, "%sable event %d", enable ? "en" : "dis", event_id);
 
     switch (event_id) {
         case MEBA_EVENT_SYNC:
@@ -3039,6 +3055,7 @@ static mesa_rc sgpio2_handler(meba_inst_t inst,
     int               i, handled = 0;
     mesa_bool_t       chk_phys[48];
     vtss_phy_10g_event_t events;
+    uint32_t          val = 0;
 
     // Getting SGPIO bit 0 - 2 (see UG1053 Table 17, p24 b0 + b1)
     for (bit = 0; bit <= 2; bit++) {
@@ -3063,44 +3080,6 @@ static mesa_rc sgpio2_handler(meba_inst_t inst,
 
     switch (board->type) {
         case BOARD_TYPE_JAGUAR2:
-            start_port = MESA_PORT_NO_NONE;
-            end_port   = MESA_PORT_NO_NONE;
-
-            // Determine which of the event bits were set (see UG1053 Table 17, p24b0 + p24b1)
-            if (sgpio_events_bit[0][24]) {
-                start_port = 0;
-                end_port   = 3; // nINT_PHY1 (PHY for ports 1-4)
-            }
-
-            if (sgpio_events_bit[1][24]) {
-                if (start_port == MESA_PORT_NO_NONE) {
-                    start_port = 4;
-                }
-
-                end_port = 7; // nINT_PHY2 (PHY for ports 5-8)
-            }
-
-            T_D(inst, "start_port = %u, sgpio_event_bit[0][24] = %d sgpio_event_bit[1][24] = %d", start_port, sgpio_events_bit[0][24], sgpio_events_bit[1][24]);
-
-            // Read PHYs if the interrupt was from one of the PHYs
-            if (start_port != MESA_PORT_NO_NONE) {
-                for (port_no = start_port; port_no <= end_port; port_no++) {
-                    if (board->port[port_no].ts_phy) {
-                        if (meba_generic_phy_timestamp_check(inst, port_no, signal_notifier) == MESA_RC_OK)
-                            handled++;
-                    }
-                }
-
-                // Check for Cu Phy events (ports 0-7)
-                for (port_no = start_port; port_no <= end_port; port_no++) {
-                    meba_port_entry_t *entry = &board->port[port_no].map;
-                    if (is_phy_port(entry->cap)) {
-                        if (meba_generic_phy_event_check(inst, port_no, signal_notifier) == MESA_RC_OK)
-                            handled++;
-                    }
-                }
-            }
-
             // Check for SFP/SFP+ LOS (SGMII ports: 1G:8-23 (p0b0-p15b0) + 10G:25-28 (p25b0-p28b0))
             for (sgpio_port = 0; sgpio_port <= 28; sgpio_port++) {
                 mesa_bool_t port_handled = false;
@@ -3155,6 +3134,44 @@ static mesa_rc sgpio2_handler(meba_inst_t inst,
                 }
             }
 
+        jr2_repeat_handler:
+            start_port = MESA_PORT_NO_NONE;
+            end_port   = MESA_PORT_NO_NONE;
+
+            // Determine which of the event bits were set (see UG1053 Table 17, p24b0 + p24b1)
+            if (sgpio_events_bit[0][24]) {
+                start_port = 0;
+                end_port   = 3; // nINT_PHY1 (PHY for ports 1-4)
+            }
+
+            if (sgpio_events_bit[1][24]) {
+                if (start_port == MESA_PORT_NO_NONE) {
+                    start_port = 4;
+                }
+
+                end_port = 7; // nINT_PHY2 (PHY for ports 5-8)
+            }
+
+            T_I(inst, "start_port = %u, sgpio_event_bit[0][24] = %d sgpio_event_bit[1][24] = %d", start_port, sgpio_events_bit[0][24], sgpio_events_bit[1][24]);
+            // Read PHYs if the interrupt was from one of the PHYs
+            if (start_port != MESA_PORT_NO_NONE) {
+                for (port_no = start_port; port_no <= end_port; port_no++) {
+                    if (board->port[port_no].ts_phy) {
+                        if (meba_generic_phy_timestamp_check(inst, port_no, signal_notifier) == MESA_RC_OK)
+                            handled++;
+                    }
+                }
+
+                // Check for Cu Phy events (ports 0-7)
+                for (port_no = start_port; port_no <= end_port; port_no++) {
+                    meba_port_entry_t *entry = &board->port[port_no].map;
+                    if (is_phy_port(entry->cap)) {
+                        if (meba_generic_phy_event_check(inst, port_no, signal_notifier) == MESA_RC_OK)
+                            handled++;
+                    }
+                }
+            }
+
             // Check for timestamp event
             if (board->phy10g_ts_cnt && sgpio_events_bit[PHY10G_SGPIO_GROUP][PHY10G_SGPIO_PORT]) {
                 for (port_no = 0; port_no < board->port_cnt; port_no++) {
@@ -3164,6 +3181,29 @@ static mesa_rc sgpio2_handler(meba_inst_t inst,
                             handled++;
                         }
                     }
+                }
+            }
+
+            // Poll events again for 1G phys.
+            if (sgpio_events_bit[0][24] || sgpio_events_bit[1][24]) {
+                sgpio_events_bit[0][24] = sgpio_events_bit[1][24] = false;
+                // In JR2, mesa_sgpio_event_poll might have already cleared interrupt sticky bits.
+                // So, Reading the register 'SIO_INTR_RAW' provides the phy interrupt status.
+                if (mesa_reg_read(NULL, 0, JR2_24_SIO_CTRL_SIO_INTR_RAW_0, &val) == MESA_RC_OK) {
+                    if (val & (1 << 24)) {
+                        sgpio_events_bit[0][24] = true;
+                    }
+                }
+                if (mesa_reg_read(NULL, 0, JR2_24_SIO_CTRL_SIO_INTR_RAW_1, &val) == MESA_RC_OK) {
+                    if (val & (1 << 24)) {
+                        sgpio_events_bit[1][24] = true;
+                    }
+                }
+                T_I(inst, "exit sgpio_events_bit[0][24]=%d sgpio_events_bit[1][24]=%d", sgpio_events_bit[0][24], sgpio_events_bit[1][24]);
+
+                // If interrupted, process again.
+                if (sgpio_events_bit[0][24] || sgpio_events_bit[1][24]) {
+                    goto jr2_repeat_handler;
                 }
             }
 
@@ -3266,7 +3306,7 @@ static mesa_rc jr2_irq_handler(meba_inst_t inst,
                                meba_event_signal_t signal_notifier)
 {
     meba_board_state_t *board = INST2BOARD(inst);
-    T_I(inst, "Called - irq %d", chip_irq);
+    T_D(inst, "Called - irq %d", chip_irq);
 
     switch (chip_irq) {
         case MESA_IRQ_PTP_SYNC:

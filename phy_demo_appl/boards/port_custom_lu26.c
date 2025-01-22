@@ -288,7 +288,7 @@ static vtss_rc lu26_sfp_i2c_read(vtss_port_no_t port_no, u8 i2c_addr, u8 addr, u
     // Dual media SFP ports - Connected to PHY i2c
     if (port_no >= 20 && port_no <= 23) {
         // Due to a hardware board issue only SFP i2c mux 0 works, so that is always used.
-        return vtss_phy_i2c_read(NULL, port_no, 0, addr, i2c_addr, data, cnt, word_acess);
+        return vtss_phy_i2c_read(NULL, port_no, 0, addr, i2c_addr, word_acess, cnt, data);
     } else {
         // Uplink ports - Connected to switch i2c
         if (i2c_read != NULL) {
@@ -304,7 +304,7 @@ static vtss_rc lu26_sfp_i2c_write(vtss_port_no_t port_no, u8 i2c_addr, u8 addr, 
     // Dual media SFP ports - Connected to PHY i2c
     if (port_no >= 20 && port_no <= 23) {
         // Due to a hardware board issue only SFP i2c mux 0 works, so that is always used.
-        return vtss_phy_i2c_write(NULL, port_no, 0, addr, i2c_addr, data, 2, word_acess);
+        return vtss_phy_i2c_write(NULL, port_no, 0, addr, i2c_addr, word_acess, 2, data);
     } else {
         // Uplink ports - Connected to switch i2c
         if (i2c_write != NULL) {
@@ -700,8 +700,8 @@ BOOL vtss_board_probe_lu26(vtss_board_t *board, vtss_board_info_t *board_info)
                           PORT_CAP_TRI_SPEED_DUAL_ANY_FIBER_FIXED_SFP_SPEED);
 
 #ifdef VTSS_SW_OPTION_POE
-            entry->poe_support   =  (port_no < 24);
-            entry->poe_chip_port =  entry->map.chip_port;
+            entry->poe_support =  (port_no < 24);
+            entry->poe_port    =  entry->map.chip_port;
 #endif
 #endif
         } else {
@@ -712,8 +712,8 @@ BOOL vtss_board_probe_lu26(vtss_board_t *board, vtss_board_info_t *board_info)
             entry->mac_if = VTSS_PORT_INTERFACE_SGMII;
             entry->cap = PORT_CAP_TRI_SPEED_COPPER | PORT_CAP_INT_PHY;
 #ifdef VTSS_SW_OPTION_POE
-            entry->poe_support   =  TRUE;
-            entry->poe_chip_port =  entry->map.chip_port;
+            entry->poe_support =  TRUE;
+            entry->poe_port    =  entry->map.chip_port;
 #endif
 
         }

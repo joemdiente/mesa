@@ -278,7 +278,7 @@ const char *vtss_phy_port_if_txt(vtss_port_interface_t if_type)
     case VTSS_PORT_INTERFACE_QSGMII:        return "QSGMII";
     case VTSS_PORT_INTERFACE_SFI:           return "SFI";
     case VTSS_PORT_INTERFACE_USGMII:        return "USGMII";
-    case VTSS_PORT_INTERFACE_SXGMII:        return "SXGMII";
+    case VTSS_PORT_INTERFACE_USXGMII:       return "USXGMII";
     case VTSS_PORT_INTERFACE_QXGMII:        return "QXGMII";
     case VTSS_PORT_INTERFACE_DXGMII_10G:    return "DXGMII_10G";
     case VTSS_PORT_INTERFACE_DXGMII_5G:     return "DXGMII_5G";
@@ -287,6 +287,7 @@ const char *vtss_phy_port_if_txt(vtss_port_interface_t if_type)
     return "?   ";
 }
 
+#if defined(VTSS_CHIP_CU_PHY) || defined(VTSS_CHIP_10G_PHY) || defined(VTSS_FEATURE_MACSEC) || defined(VTSS_OPT_PHY_TIMESTAMP)
 static void vtss_phy_debug_print_header_underlined(const vtss_debug_printf_t pr,
                                                    const char                *header,
                                                    BOOL layer)
@@ -318,6 +319,7 @@ static void vtss_phy_print_layer(const vtss_debug_printf_t pr,
                                                1);
     }
 }
+#endif
 
 vtss_rc vtss_phy_debug_info_print(const vtss_inst_t         inst,
                                   const vtss_debug_printf_t pr,
@@ -325,7 +327,11 @@ vtss_rc vtss_phy_debug_info_print(const vtss_inst_t         inst,
 {
     vtss_rc      rc;
     vtss_state_t *vtss_state;
-    int          ail, hdr;
+    int          ail;
+#if defined(VTSS_CHIP_CU_PHY) || defined(VTSS_CHIP_10G_PHY) || defined(VTSS_FEATURE_MACSEC) || defined(VTSS_OPT_PHY_TIMESTAMP)
+    int          hdr;
+#endif
+
 
     VTSS_ENTER();
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
@@ -335,7 +341,10 @@ vtss_rc vtss_phy_debug_info_print(const vtss_inst_t         inst,
                 (!ail && info->layer == VTSS_DEBUG_LAYER_AIL)) {
                 continue;
             }
+#if defined(VTSS_CHIP_CU_PHY) || defined(VTSS_CHIP_10G_PHY) || defined(VTSS_FEATURE_MACSEC) || defined(VTSS_OPT_PHY_TIMESTAMP)
             hdr = 1;
+#endif
+
 #if defined(VTSS_CHIP_CU_PHY)
             if (rc == VTSS_RC_OK && vtss_phy_debug_group_enabled(pr, info, VTSS_DEBUG_GROUP_PHY)) {
                 vtss_phy_print_layer(pr, ail, &hdr);
@@ -894,8 +903,9 @@ vtss_rc csr_rd(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOOL i
     u32                        reg_addr = 0;
     u16                        reg_value[2];
     u32                        offset, target, base_addr;
-    BOOL                       use_base_port = TRUE, is_cross_connected = FALSE;
+    BOOL                       use_base_port = TRUE;
 #ifdef VTSS_CHIP_10G_PHY
+    BOOL                       is_cross_connected = FALSE;
     vtss_phy_10g_family_t      phy_family = VTSS_PHY_FAMILY_10G_NONE;
     vtss_port_no_t port=0;
 
@@ -936,7 +946,7 @@ vtss_rc csr_rd(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOOL i
             } else {
                 VTSS_RC(vtss_phy_1g_spi_read_write(vtss_state, port_no, 0, 1, (u8)target, (u16)offset, value));
             }
-            VTSS_N("SPI 1G: RD port %u is_32_bit %s : reg %0xX%0x = 0x%0x", port_no, is32 ? "TRUE" : "FALSE", mmd, addr, *value);
+            VTSS_N("SPI 1G: RD port %u is_32_bit %s_: reg %0xX%0x = 0x%0x", port_no, is32 ? "TRUE" : "FALSE", mmd, addr, *value);
 #endif /* VTSS_CHIP_10G_PHY */
         }
         return VTSS_RC_OK;
@@ -980,9 +990,10 @@ vtss_rc csr_wr(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOOL i
 {
 
     u16               reg_value_upper, reg_value_lower;
-    BOOL              clause45 = FALSE, use_base_port = TRUE, is_cross_connected = FALSE;
+    BOOL              clause45 = FALSE, use_base_port = TRUE;
     u32               offset, target, base_addr, reg_addr;
 #ifdef VTSS_CHIP_10G_PHY
+    BOOL                       is_cross_connected = FALSE;
     vtss_phy_10g_family_t      phy_family = VTSS_PHY_FAMILY_10G_NONE;
     vtss_port_no_t port=0;
 
@@ -1145,12 +1156,13 @@ vtss_rc csr_rd_64(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOO
     u32                        reg_addr = 0;
     u16                        reg_value[4];
     u32                        offset, target, base_addr;
-    BOOL                       use_base_port = TRUE, is_cross_connected = FALSE;
+    BOOL                       use_base_port = TRUE;
     u32                        value_low, value_hi;
 #ifdef VTSS_CHIP_CU_PHY
     u64                        value_64;
 #endif /* VTSS_CHIP_CU_PHY */
 #ifdef VTSS_CHIP_10G_PHY
+    BOOL                       is_cross_connected = FALSE;
     vtss_phy_10g_family_t      phy_family = VTSS_PHY_FAMILY_10G_NONE;
 
     phy_family = vtss_state->phy_10g_state[port_no].family;
@@ -1261,9 +1273,10 @@ vtss_rc csr_wr_64(vtss_state_t *vtss_state, vtss_port_no_t port_no, u16 mmd, BOO
     u32                        reg_addr = 0;
     u16                        reg_val;
     u32                        offset, target, base_addr;
-    BOOL                       use_base_port = TRUE, is_cross_connected = FALSE;
+    BOOL                       use_base_port = TRUE;
     u32                        value_low, value_hi;
 #ifdef VTSS_CHIP_10G_PHY
+    BOOL                       is_cross_connected = FALSE;
     vtss_phy_10g_family_t      phy_family = VTSS_PHY_FAMILY_10G_NONE;
 
     phy_family = vtss_state->phy_10g_state[port_no].family;
@@ -1486,7 +1499,8 @@ vtss_rc phy_10g_mac_conf(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL 
                 rx_rd_thres = 127;
             }
         }
-        if (vtss_state->phy_10g_state[port_no].mode.oper_mode == VTSS_PHY_LAN_MODE) {
+        if ((vtss_state->phy_10g_state[port_no].mode.oper_mode == VTSS_PHY_LAN_MODE) ||
+            (vtss_state->phy_10g_state[port_no].mode.oper_mode == VTSS_PHY_LAN_SYNCE_MODE)) {
             if (vtss_state->phy_10g_state[port_no].family == VTSS_PHY_FAMILY_MALIBU) {
                 tx_rd_thres = 5;
                 rx_rd_thres = 6;
@@ -1602,7 +1616,7 @@ vtss_rc phy_10g_mac_conf(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL 
                     (phy10g ? VTSS_F_HOST_MAC_CONFIG_MAC_PKTINF_CFG_RF_RELAY_ENA : 0) |
                     VTSS_F_HOST_MAC_CONFIG_MAC_PKTINF_CFG_STRIP_PREAMBLE_ENA |
                     VTSS_F_HOST_MAC_CONFIG_MAC_PKTINF_CFG_INSERT_PREAMBLE_ENA |
-                    (phy10g ? VTSS_F_HOST_MAC_CONFIG_MAC_PKTINF_CFG_ENABLE_TX_PADDING : VTSS_BIT(28)));
+                    ((phy10g || macsec_ena) ? VTSS_F_HOST_MAC_CONFIG_MAC_PKTINF_CFG_ENABLE_TX_PADDING : VTSS_BIT(28)));
 
         CSR_WARM_WRM(port_no, VTSS_HOST_MAC_CONFIG_MAC_MODE_CFG, 0,
                      VTSS_F_HOST_MAC_CONFIG_MAC_MODE_CFG_DISABLE_DIC);
@@ -1851,6 +1865,20 @@ vtss_rc vtss_phy_callout_set(const vtss_inst_t        inst,
             vtss_state->callout[port_no] = co;
             vtss_state->callout_ctx[port_no] = c;
         }
+    }
+    VTSS_EXIT();
+
+    return rc;
+}
+
+vtss_rc vtss_phy_callout_del(const vtss_inst_t inst,
+                             const vtss_port_no_t  port_no) {
+    vtss_state_t *vtss_state;
+    vtss_rc rc = VTSS_RC_OK;
+
+    VTSS_ENTER();
+    if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
+        vtss_state->callout_ctx[port_no] = NULL;
     }
     VTSS_EXIT();
 

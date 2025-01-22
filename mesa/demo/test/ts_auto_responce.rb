@@ -19,8 +19,12 @@ $ts = get_test_setup("mesa_pc_b2b_4x")
 
 check_capabilities do
     $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
-    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")),
-           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5).")
+    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")),
+           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")} (Lan969x)")
+    $cap_auto_resp = $ts.dut.call("mesa_capability", "MESA_CAP_TS_DELAY_REQ_AUTO_RESP")
+    assert($cap_auto_resp, "The Auto Response capability must be defined")
     $cap_epid = $ts.dut.call("mesa_capability", "MESA_CAP_PACKET_IFH_EPID")
 end
 
@@ -31,12 +35,6 @@ def tod_auto_responce_test(domain)
     conf = $ts.dut.call("mesa_ts_operation_mode_get", $ts.dut.port_list[$port0])
     conf["domain"] = domain
     $ts.dut.call("mesa_ts_operation_mode_set", $ts.dut.port_list[$port0], conf)
-
-    # Set TOD to 5 seconds
-    tod  = $ts.dut.call("mesa_ts_domain_timeofday_get", domain)
-    tod[0]["seconds"] = 5
-    tod[0]["nanoseconds"] = 0
-    $ts.dut.call("mesa_ts_domain_timeofday_set", domain, tod[0])
 
     test "Create IS2 to automatic Delay Response" do
     $ace_conf = $ts.dut.call("mesa_ace_init", "MESA_ACE_TYPE_ETYPE")
@@ -64,6 +62,12 @@ def tod_auto_responce_test(domain)
     $frameHdrRx = frame_create("00:08:09:0a:0b:0c", "00:02:03:04:05:06")
     #response_pdu_rx_create(controlField=IGNORE, secondsField=IGNORE, reqClockId=IGNORE, srcClockId=IGNORE, reqPortNumber=IGNORE, srcPortNumber=IGNORE, flagField=IGNORE)
     framerx = $frameHdrRx.dup + response_pdu_rx_create(3, 5, $requestClockId, 0, $requestPortNumber, DEFAULT_PORT_ID_PORT, IGNORE)
+
+    # Set TOD to 5 seconds
+    tod  = $ts.dut.call("mesa_ts_domain_timeofday_get", domain)
+    tod[0]["seconds"] = 5
+    tod[0]["nanoseconds"] = 0
+    $ts.dut.call("mesa_ts_domain_timeofday_set", domain, tod[0])
 
     # Transmit Delay Request on front port
     frame_tx($frametx, $port0, framerx, "", "", "")

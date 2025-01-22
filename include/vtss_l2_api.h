@@ -58,6 +58,8 @@ extern "C" {
 #define VTSS_MAC_ADDRS     128    /**< Number of MAC addresses */
 #elif defined(VTSS_ARCH_JAGUAR_2)
 #define VTSS_MAC_ADDRS     32768  /**< Number of MAC addresses */
+#elif defined(VTSS_ARCH_LAN969X)
+#define VTSS_MAC_ADDRS     16384  /**< Number of MAC addresses */
 #else
 #define VTSS_MAC_ADDRS     8192   /**< Number of MAC addresses */
 #endif
@@ -261,9 +263,12 @@ vtss_rc vtss_mac_table_status_get(const vtss_inst_t        inst,
 /** \brief Learning mode */
 typedef struct 
 {
-    BOOL automatic;  /**< Automatic learning done by switch chip (default enabled) */
-    BOOL cpu;        /**< Learn frames copied to CPU (default disabled) */
-    BOOL discard;    /**< Learn frames discarded (default disabled) */
+    BOOL automatic;   /**< Automatic learning done by switch chip (default enabled) */
+    BOOL cpu;         /**< Learn frames copied to CPU (default disabled) */
+    BOOL discard;     /**< Learn frames discarded (default disabled) */
+#if defined(VTSS_FEATURE_MAC_PORT_LEARN_LIMIT)
+    u32  learn_limit; /**< Learn limit in number of entries. '0' means disable */
+#endif
 } vtss_learn_mode_t;
 
 /**
@@ -618,6 +623,9 @@ typedef struct
     BOOL       flooding; /**< Enable/disable flooding */
     BOOL       mirror;   /**< Enable/disable mirroring */
     BOOL       ingress_filter; /**< Ingress filtering */
+#if defined(VTSS_FEATURE_QOS_OT)
+    BOOL       ot;       /**< Operational Traffic classification */
+#endif
 #if defined(VTSS_FEATURE_VLAN_SVL)
     vtss_vid_t fid;      /**< Forwarding ID for SVL/IVL control */
 #endif /* VTSS_FEATURE_VLAN_SVL */
@@ -923,6 +931,7 @@ typedef struct
 #if defined(VTSS_FEATURE_XFLOW)
     vtss_iflow_id_t           flow_id;    /**< Ingress flow ID */
     vtss_oam_detect_t         oam_detect; /**< OAM detection. Mark this frame as containing OAM behind a number of tags. */
+    BOOL                      mrp_enable; // Enable MRP
 #endif
     BOOL                      prio_enable; // Enable priority classification
     vtss_prio_t               prio;        // Priority value
@@ -1200,6 +1209,9 @@ typedef struct
 #endif
 #if defined(VTSS_FEATURE_QOS_EGRESS_QUEUE_CUT_THROUGH)
     BOOL                   cut_through_disable; // Force store-and-forward
+#endif
+#if defined(VTSS_FEATURE_QOS_OT)
+    BOOL                   ot;       /**< Operational Traffic classification */
 #endif
 } vtss_iflow_conf_t;
 
@@ -2071,7 +2083,7 @@ vtss_rc vtss_aggr_mode_set(const vtss_inst_t       inst,
     By default, mirroring is disabled for all ports.
 */
 
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 /** \brief Mirror port configuration */
 typedef enum
 {
@@ -2087,7 +2099,7 @@ typedef struct
 {
     vtss_port_no_t    port_no;    /**< Mirror port or VTSS_PORT_NO_NONE */
     BOOL              fwd_enable; /**< Enable normal traffic forwarding to mirror port */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_mirror_tag_t tag;        /**< Mirror tag type */
     vtss_vid_t        vid;        /**< Mirror tag VID */
     vtss_tagprio_t    pcp;        /**< Mirror tag PCP */
@@ -2788,6 +2800,290 @@ vtss_rc vtss_rce_del(const vtss_inst_t   inst,
                      const vtss_rce_id_t rce_id);
 
 #endif /* VTSS_FEATURE_RCL */
+
+#if defined(VTSS_FEATURE_REDBOX)
+
+/* - PRP/HSR RedBox ------------------------------------------------ */
+
+// Number of RedBox instances
+#define VTSS_REDBOX_CNT 5
+
+// RedBox ID, zero-based
+typedef u8 vtss_rb_id_t;
+
+// RedBox capabilities
+typedef struct {
+    BOOL port_list[VTSS_PORTS]; // Switch ports available for RedBox as port A/B
+} vtss_rb_cap_t;
+
+// Get RedBox capabilities.
+// rb_id [IN]  RedBox ID.
+// cap [OUT]   RedBox capabilities.
+vtss_rc vtss_rb_cap_get(const vtss_inst_t  inst,
+                        const vtss_rb_id_t rb_id,
+                        vtss_rb_cap_t      *const cap);
+
+// RedBox mode
+typedef enum {
+    VTSS_RB_MODE_DISABLED, // Disabled
+    VTSS_RB_MODE_PRP_SAN,  // PRP-SAN
+    VTSS_RB_MODE_HSR_SAN,  // HSR-SAN
+    VTSS_RB_MODE_HSR_PRP,  // HSR-PRP
+    VTSS_RB_MODE_HSR_HSR   // HSR-HSR
+} vtss_rb_mode_t;
+
+// Age time
+typedef u16 vtss_rb_age_time_t;
+
+// Forwarding of Supervision frames
+typedef enum {
+    VTSS_RB_SV_FORWARD,  // Forward normally
+    VTSS_RB_SV_DISCARD,  // Discard
+    VTSS_RB_SV_CPU_COPY, // Copy to CPU (Tx Interlink only)
+    VTSS_RB_SV_CPU_ONLY, // Redirect to CPU (Tx Interlink only)
+} vtss_rb_sv_t;
+
+// RedBox configuration
+typedef struct {
+    vtss_rb_mode_t     mode;            // Mode
+    vtss_port_no_t     port_a;          // Port A or VTSS_PORT_NO_NONE
+    vtss_port_no_t     port_b;          // Port B or VTSS_PORT_NO_NONE
+    u8                 net_id;          // NetId (0-7) used for HSR port Tx and Interlink Tx filtering (if non-zero)
+    u8                 lan_id;          // LanId (0/1) used for Interlink Tx for HSR-PRP
+    BOOL               nt_dmac_disable; // Disable Node Table DMAC filtering
+    vtss_rb_age_time_t nt_age_time;     // Node Table age time [seconds]
+    vtss_rb_age_time_t pnt_age_time;    // Proxy Node Table age time [secondss]
+    vtss_rb_age_time_t dd_age_time;     // Duplicate Discard age time [milliseconds]
+    vtss_rb_sv_t       sv;              // LRE-to-Interlink Supervision frame forwarding
+    BOOL               sv_discard;      // Interlink-to-LRE Supervision frame discard flag
+    BOOL               mode_u;          // Any HSR mode: Forward frames Rx'd on LRE with DMAC in PNT to other LRE port
+} vtss_rb_conf_t;
+
+// Get RedBox configuration.
+// rb_id [IN]  RedBox ID.
+// conf [OUT]  RedBox configuration structure.
+vtss_rc vtss_rb_conf_get(const vtss_inst_t  inst,
+                         const vtss_rb_id_t rb_id,
+                         vtss_rb_conf_t     *const conf);
+
+// Set RedBox configuration.
+// rb_id [IN]  RedBox ID.
+// conf [IN]   RedBox configuration structure.
+vtss_rc vtss_rb_conf_set(const vtss_inst_t    inst,
+                         const vtss_rb_id_t   rb_id,
+                         const vtss_rb_conf_t *const conf);
+
+// RedBox port counters
+typedef struct {
+    vtss_counter_t rx_local;      // Rx link-local (BPDU) frames
+    vtss_counter_t rx_untagged;   // Rx frames without HSR/PRP tag
+    vtss_counter_t rx_tagged;     // Rx frames with HSR/PRP tag
+    vtss_counter_t rx_wrong_lan;  // Rx frames with wrong LanId (PRP port)
+    vtss_counter_t rx_own;        // Rx frames from this RedBox (HSR port)
+    vtss_counter_t tx_local;      // Tx link-local (BPDU) frames
+    vtss_counter_t tx_untagged;   // Tx frames without HSR/PRP tag
+    vtss_counter_t tx_tagged;     // Tx frames with HSR/PRP tag
+    vtss_counter_t tx_dupl_zero;  // Tx frames with zero duplicates
+    vtss_counter_t tx_dupl_one;   // Tx frames with one duplicate discarded
+    vtss_counter_t tx_dupl_multi; // Tx frames with multiple duplicates discarded
+} vtss_rb_port_counters_t;
+
+// RedBox counters
+typedef struct {
+    vtss_rb_port_counters_t port_a; // Port A counters
+    vtss_rb_port_counters_t port_b; // Port B counters
+    vtss_rb_port_counters_t port_c; // Port C counters (Interlink)
+} vtss_rb_counters_t;
+
+// Get RedBox counters.
+// rb_id [IN]      RedBox ID.
+// counters [OUT]  RedBox counters.
+vtss_rc vtss_rb_counters_get(const vtss_inst_t  inst,
+                             const vtss_rb_id_t rb_id,
+                             vtss_rb_counters_t *const counters);
+
+// Clear RedBox counters.
+// rb_id [IN]  RedBox ID.
+vtss_rc vtss_rb_counters_clear(const vtss_inst_t  inst,
+                               const vtss_rb_id_t rb_id);
+
+// Node ID
+typedef u16 vtss_rb_node_id_t;
+
+// Node type
+typedef enum {
+    VTSS_RB_NODE_TYPE_DAN, // DANP/DANH
+    VTSS_RB_NODE_TYPE_SAN, // SAN (PRP)
+} vtss_rb_node_type_t;
+
+// Node configuration
+typedef struct {
+    vtss_rb_node_type_t type;   // Node type
+    BOOL                san_a;  // SAN: Port A indication
+    BOOL                locked; // Locked/static flag
+} vtss_rb_node_conf_t;
+
+// Add node entry.
+// rb_id [IN]  RedBox ID.
+// mac [IN]    MAC address.
+// conf [IN]   Node configuration.
+vtss_rc vtss_rb_node_add(const vtss_inst_t         inst,
+                         const vtss_rb_id_t        rb_id,
+                         const vtss_mac_t          *const mac,
+                         const vtss_rb_node_conf_t *const conf);
+
+// Delete node entry.
+// rb_id [IN]  RedBox ID.
+// mac [IN]    MAC address.
+vtss_rc vtss_rb_node_del(const vtss_inst_t  inst,
+                         const vtss_rb_id_t rb_id,
+                         const vtss_mac_t   *const mac);
+
+// Redbox table clear command
+typedef enum {
+    VTSS_RB_CLEAR_ALL,      // Remove all entries
+    VTSS_RB_CLEAR_UNLOCKED, // Remove all unlocked entries
+    VTSS_RB_CLEAR_LOCKED,   // Remove all locked entries
+} vtss_rb_clear_t;
+
+// Clear node table.
+// rb_id [IN]  RedBox ID.
+// clear [IN]  Clear command
+vtss_rc vtss_rb_node_table_clear(const vtss_inst_t     inst,
+                                 const vtss_rb_id_t    rb_id,
+                                 const vtss_rb_clear_t clear);
+
+// Node counters
+typedef struct {
+    u32 rx;           // Rx frames
+    u32 rx_wrong_lan; // Rx frames with wrong LanId (PRP port)
+} vtss_rb_node_counters_t;
+
+// Node port A/B information
+typedef struct {
+    BOOL                    fwd; // Forwarding
+    vtss_rb_age_time_t      age; // Age (PRP)
+    vtss_rb_node_counters_t cnt; // Counters
+} vtss_rb_node_port_t;
+
+// Node entry
+typedef struct {
+    vtss_mac_t          mac;    // MAC address (key)
+    vtss_rb_node_id_t   id;     // Node ID (alternative key)
+    BOOL                locked; // Locked/static flag
+    vtss_rb_node_type_t type;   // Node type
+    vtss_rb_node_port_t port_a; // Port A
+    vtss_rb_node_port_t port_b; // Port B
+} vtss_rb_node_t;
+
+// Get node entry based on MAC address.
+// rb_id [IN]   RedBox ID.
+// mac [IN]     MAC address.
+// entry [OUT]  Node entry.
+vtss_rc vtss_rb_node_get(const vtss_inst_t  inst,
+                         const vtss_rb_id_t rb_id,
+                         const vtss_mac_t   *const mac,
+                         vtss_rb_node_t     *const entry);
+
+// Get next node entry based on MAC address.
+// rb_id [IN]   RedBox ID.
+// mac [IN]     MAC address.
+// entry [OUT]  Node entry.
+vtss_rc vtss_rb_node_get_next(const vtss_inst_t  inst,
+                              const vtss_rb_id_t rb_id,
+                              const vtss_mac_t   *const mac,
+                              vtss_rb_node_t     *const entry);
+
+// Get next node entry based on ID (for IEC-62439-3-MIB).
+// rb_id [IN]   RedBox ID.
+// id [IN]      Node ID, use zero to get first entry.
+// entry [OUT]  Node entry.
+vtss_rc vtss_rb_node_id_get_next(const vtss_inst_t       inst,
+                                 const vtss_rb_id_t      rb_id,
+                                 const vtss_rb_node_id_t id,
+                                 vtss_rb_node_t          *const entry);
+
+// Proxy node ID
+typedef u16 vtss_rb_proxy_node_id_t;
+
+// Proxy node type (HSR-PRP)
+typedef enum {
+    VTSS_RB_PROXY_NODE_TYPE_DAN, // DANP
+    VTSS_RB_PROXY_NODE_TYPE_SAN, // SAN
+} vtss_rb_proxy_node_type_t;
+
+// Proxy node configuration
+typedef struct {
+    vtss_rb_proxy_node_type_t type;   // Proxy node type
+    BOOL                      locked; // Locked/static flag
+} vtss_rb_proxy_node_conf_t;
+
+// Add proxy node entry.
+// rb_id [IN]  RedBox ID.
+// mac [IN]    MAC address.
+// conf [IN]   Proxy node configuration.
+vtss_rc vtss_rb_proxy_node_add(const vtss_inst_t               inst,
+                               const vtss_rb_id_t              rb_id,
+                               const vtss_mac_t                *const mac,
+                               const vtss_rb_proxy_node_conf_t *const conf);
+// Delete proxy node entry.
+// rb_id [IN]  RedBox ID.
+// mac [IN]    MAC address.
+vtss_rc vtss_rb_proxy_node_del(const vtss_inst_t  inst,
+                               const vtss_rb_id_t rb_id,
+                               const vtss_mac_t   *const mac);
+
+// Clear proxy node table.
+// rb_id [IN]  RedBox ID.
+// clear [IN]  Clear command
+vtss_rc vtss_rb_proxy_node_table_clear(const vtss_inst_t     inst,
+                                       const vtss_rb_id_t    rb_id,
+                                       const vtss_rb_clear_t clear);
+
+// Proxy node counters
+typedef struct {
+    u32 rx; // Rx frames
+    u32 rx_wrong_lan; // Rx frames with wrong LanId (HSR-PRP mode)
+} vtss_rb_proxy_node_counters_t;
+
+// Proxy node entry.
+typedef struct {
+    vtss_mac_t                    mac;    // MAC address (key)
+    vtss_rb_proxy_node_id_t       id;     // Proxy node ID (alternative key)
+    BOOL                          locked; // Locked/static flag
+    vtss_rb_proxy_node_type_t     type;   // Proxy node type
+    vtss_rb_age_time_t            age;    // Age
+    vtss_rb_proxy_node_counters_t cnt;    // Port C counters
+} vtss_rb_proxy_node_t;
+
+// Get proxy node entry based on MAC address.
+// rb_id [IN]   RedBox ID.
+// mac [IN]     MAC address.
+// entry [OUT]  Proxy node entry.
+vtss_rc vtss_rb_proxy_node_get(const vtss_inst_t    inst,
+                               const vtss_rb_id_t   rb_id,
+                               const vtss_mac_t     *const mac,
+                               vtss_rb_proxy_node_t *const entry);
+
+// Get next proxy node entry based on MAC address.
+// rb_id [IN]   RedBox ID.
+// mac [IN]     MAC address.
+// entry [OUT]  Proxy node entry.
+vtss_rc vtss_rb_proxy_node_get_next(const vtss_inst_t    inst,
+                                    const vtss_rb_id_t   rb_id,
+                                    const vtss_mac_t     *const mac,
+                                    vtss_rb_proxy_node_t *const entry);
+
+// Get next proxy node entry based on ID (for IEC-62439-3-MIB).
+// rb_id [IN]   RedBox ID.
+// id [IN]      Proxy node ID, use zero to get first entry.
+// entry [OUT]  Proxy node entry.
+vtss_rc vtss_rb_proxy_node_id_get_next(const vtss_inst_t             inst,
+                                       const vtss_rb_id_t            rb_id,
+                                       const vtss_rb_proxy_node_id_t id,
+                                       vtss_rb_proxy_node_t          *const entry);
+
+#endif /* VTSS_FEATURE_REDBOX */
 
 #ifdef __cplusplus
 }

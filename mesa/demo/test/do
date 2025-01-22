@@ -6,7 +6,7 @@
 set -e
 
 if (( $# < 2 )); then
-   echo "Usage: $0 oc/op/j2/j48/st/ca1/ca2/fa/mi/ms/me/mr/ml [<test_server>] <test_script> [brief]"
+   echo "Usage: $0 oc/op/j2/j48/st/ca1/ca2/fa/mi/ms/me/mr/ml [<test_server>] <test_script> [short]"
    exit
 fi
 
@@ -51,7 +51,7 @@ case $chip in
      ;;
 
      fa)
-     ts=dk-t34-4
+     ts=dk-t34-5
      img=arm64_vsc7558TSN.itb     # 625MHz
 #     img=arm64_vsc7546TSN.itb     # 250MHZ
 #     img=arm64_vsc7552TSN.itb     # 500MHz
@@ -99,6 +99,24 @@ case $chip in
      dir=build-arm
      ;;
 
+     la2)
+     ts=dk-t36-2
+     img=arm64_lan9698RED.itb
+     dir=build-arm64
+     ;;
+
+     la3)
+     ts=dk-t36-3
+     img=arm64_lan9698RED.itb
+     dir=build-arm64
+     ;;
+
+     ll)
+     ts=dk-t36-2
+     img=arm64_lan9698RED_lm.itb
+     dir=build-arm64
+     ;;
+
      *)
      echo "Illegal chip: $chip"
      exit
@@ -108,8 +126,14 @@ esac
 cnt=$#
 suffix=""
 last=${!#}
+
 if [ $last == "brief" ]; then
     suffix="--brief"
+    ((cnt--))
+fi
+
+if [ $last == "short" ]; then
+    suffix="--short"
     ((cnt--))
 fi
 

@@ -10,9 +10,15 @@
 /* - FRER compound streams ----------------------------------------- */
 
 // Number of member streams and compound streams */
-#if defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_MSTREAM_CNT VTSS_STREAM_CNT
+#define VTSS_CSTREAM_CNT (VTSS_STREAM_CNT / 2)
+#elif defined(VTSS_ARCH_LAN966X)
 #define VTSS_MSTREAM_CNT 512
 #define VTSS_CSTREAM_CNT 256
+#elif defined(VTSS_ARCH_LAN969X)
+#define VTSS_MSTREAM_CNT 256
+#define VTSS_CSTREAM_CNT 128
 #else
 #define VTSS_MSTREAM_CNT 1024
 #define VTSS_CSTREAM_CNT 512
@@ -148,8 +154,12 @@ typedef struct {
 typedef u16 vtss_psfp_gate_id_t;
 
 // Number of PSFP gates */
-#if defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_PSFP_GATE_CNT  VTSS_STREAM_CNT
+#elif defined(VTSS_ARCH_LAN966X)
 #define VTSS_PSFP_GATE_CNT 256
+#elif defined(VTSS_ARCH_LAN969X)
+#define VTSS_PSFP_GATE_CNT 255
 #else
 #define VTSS_PSFP_GATE_CNT 1023
 #endif
@@ -236,8 +246,12 @@ vtss_rc vtss_psfp_gate_status_get(const vtss_inst_t         inst,
 typedef u16 vtss_psfp_filter_id_t;
 
 // Number of PSFP filters */
-#if defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_STREAM_CNT)
+#define VTSS_PSFP_FILTER_CNT VTSS_STREAM_CNT
+#elif defined(VTSS_ARCH_LAN966X)
 #define VTSS_PSFP_FILTER_CNT 256
+#elif defined(VTSS_ARCH_LAN969X)
+#define VTSS_PSFP_FILTER_CNT 255
 #else
 #define VTSS_PSFP_FILTER_CNT 1023
 #endif
@@ -326,6 +340,9 @@ typedef struct {
 
 // Time Aware Shaper (802.1Qbv) port configuration
 typedef struct {
+#if defined(VTSS_FEATURE_QOS_OT)
+    BOOL             ot;    // TAS is IT or OT traffic shaping
+#endif
     // Maximum SDU size supported by each queue in bytes. Minimum 64 bytes.
     // This parameter contribute to calculating the guard band time max_sdu[]*8 / LINK_SPEED
     u16              max_sdu[VTSS_QUEUE_ARRAY_SIZE];
@@ -394,6 +411,12 @@ typedef struct {
 
     // The current port open states for the corresponding traffic classes.
     BOOL                gate_open[VTSS_QUEUE_ARRAY_SIZE];
+
+    // The information about the current GCL - if any
+    vtss_qos_tas_gce_t  cur_gcl[VTSS_QOS_TAS_GCL_LEN_MAX];
+    uint32_t            cur_gcl_length;
+    uint32_t            cur_cycle_time;
+    vtss_timestamp_t    cur_base_time;
 } vtss_qos_tas_port_status_t;
 
 // Get Time Aware Shaper (802.1Qbv) status for port.

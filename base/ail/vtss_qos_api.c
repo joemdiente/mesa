@@ -631,7 +631,7 @@ static vtss_rc vtss_qos_ingress_map_values_check(const vtss_qos_ingress_map_valu
     return VTSS_RC_OK;
 }
 
-static vtss_rc vtss_qos_ingress_map_check(const vtss_qos_ingress_map_t *const map)
+static vtss_rc vtss_qos_ingress_map_check(vtss_state_t *vtss_state, const vtss_qos_ingress_map_t *const map)
 {
     int i, j;
 
@@ -714,10 +714,12 @@ vtss_rc vtss_qos_ingress_map_add(const vtss_inst_t            inst,
     vtss_rc      rc;
 
     VTSS_D("map_id: %u", map->id);
-    VTSS_RC(vtss_qos_ingress_map_check(map));
+
     VTSS_ENTER();
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
-        rc = VTSS_FUNC(qos.ingress_map_add, map);
+        if ((rc = vtss_qos_ingress_map_check(vtss_state, map)) == VTSS_RC_OK) {
+            rc = VTSS_FUNC(qos.ingress_map_add, map);
+        }
     }
     VTSS_EXIT();
     return rc;
@@ -731,14 +733,14 @@ vtss_rc vtss_qos_ingress_map_del(const vtss_inst_t               inst,
 
     VTSS_D("map_id: %u", id);
 
-    if ((id < VTSS_QOS_INGRESS_MAP_ID_START) || (id >= VTSS_QOS_INGRESS_MAP_ID_END)) {
-        VTSS_E("Invalid ingress map id: %u!", id);
-        return VTSS_RC_ERROR;
-    }
-
     VTSS_ENTER();
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
-        rc = VTSS_FUNC(qos.ingress_map_del, id);
+        if ((id < VTSS_QOS_INGRESS_MAP_ID_START) || (id >= VTSS_QOS_INGRESS_MAP_ID_END)) {
+            VTSS_E("Invalid ingress map id: %u!", id);
+            rc = VTSS_RC_ERROR;
+        } else {
+            rc = VTSS_FUNC(qos.ingress_map_del, id);
+        }
     }
     VTSS_EXIT();
     return rc;
@@ -812,7 +814,8 @@ static vtss_rc vtss_qos_egress_map_values_check(const vtss_qos_egress_map_values
     return VTSS_RC_OK;
 }
 
-static vtss_rc vtss_qos_egress_map_check(const vtss_qos_egress_map_t *const map)
+static vtss_rc vtss_qos_egress_map_check(vtss_state_t *vtss_state,
+                                         const vtss_qos_egress_map_t *const map)
 {
     int i, j;
 
@@ -900,10 +903,11 @@ vtss_rc vtss_qos_egress_map_add(const vtss_inst_t           inst,
     vtss_rc      rc;
 
     VTSS_D("map_id: %u", map->id);
-    VTSS_RC(vtss_qos_egress_map_check(map));
     VTSS_ENTER();
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
-        rc = VTSS_FUNC(qos.egress_map_add, map);
+        if ((rc = vtss_qos_egress_map_check(vtss_state, map)) == VTSS_RC_OK) {
+            rc = VTSS_FUNC(qos.egress_map_add, map);
+        }
     }
     VTSS_EXIT();
     return rc;
@@ -916,15 +920,14 @@ vtss_rc vtss_qos_egress_map_del(const vtss_inst_t              inst,
     vtss_rc      rc;
 
     VTSS_D("map_id: %u", id);
-
-    if ((id < VTSS_QOS_EGRESS_MAP_ID_START) || (id >= VTSS_QOS_EGRESS_MAP_ID_END)) {
-        VTSS_E("Invalid egress map id: %u!", id);
-        return VTSS_RC_ERROR;
-    }
-
     VTSS_ENTER();
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
-        rc = VTSS_FUNC(qos.egress_map_del, id);
+        if (id < VTSS_QOS_EGRESS_MAP_ID_START || id >= VTSS_QOS_EGRESS_MAP_ID_END) {
+            VTSS_E("Invalid egress map id: %u!", id);
+            rc = VTSS_RC_ERROR;
+        } else {
+            rc = VTSS_FUNC(qos.egress_map_del, id);
+        }
     }
     VTSS_EXIT();
     return rc;
@@ -1193,8 +1196,30 @@ vtss_rc vtss_qos_inst_create(struct vtss_state_s *vtss_state)
     vtss_port_no_t     port_no;
     u32                i;
 
-    if ((vtss_state->arch == VTSS_ARCH_CU_PHY) || (vtss_state->arch == VTSS_ARCH_10G_PHY)) {
-        return VTSS_RC_OK; /* No need to initialize QoS state on a PHY */
+    if (vtss_state->create_pre) {
+        // Preprocessing
+        vtss_state->qos.prio_count = VTSS_PRIOS;
+#if defined(VTSS_FEATURE_QOS_INGRESS_MAP)
+        {
+            vtss_qos_map_adm_t *m = &vtss_state->qos.imap;
+
+            m->id.entry_len = VTSS_QOS_INGRESS_MAP_IDS;
+            m->ix[0].entry_len = VTSS_QOS_INGRESS_MAP_ROWS;
+            m->ix[0].reserved  = VTSS_QOS_INGRESS_MAP_IX_RESERVED;
+        }
+#endif /* VTSS_FEATURE_QOS_INGRESS_MAP */
+#if defined(VTSS_FEATURE_QOS_EGRESS_MAP)
+        {
+            vtss_qos_map_adm_t *m = &vtss_state->qos.emap;
+
+            m->id.entry_len = VTSS_QOS_EGRESS_MAP_IDS;
+            m->ix[0].entry_len = VTSS_QOS_EGRESS_MAP_ROWS;
+            m->ix[0].reserved  = VTSS_QOS_EGRESS_MAP_IX_RESERVED;
+            m->ix[1].entry_len = VTSS_QOS_EGRESS_MAP_ROWS;
+            m->ix[1].reserved  = VTSS_QOS_EGRESS_MAP_IX_RESERVED;
+        }
+#endif /* VTSS_FEATURE_QOS_EGRESS_MAP */
+        return VTSS_RC_OK;
     }
 
     /* Global configuration initialization begin */
@@ -1416,12 +1441,9 @@ vtss_rc vtss_qos_inst_create(struct vtss_state_s *vtss_state)
 
         /* Id table */
         m->id.entry     = vtss_state->qos.imap_id;
-        m->id.entry_len = VTSS_QOS_INGRESS_MAP_IDS;
 
         /* Ix table. Ingress mapping has only one resource */
         m->ix[0].entry     = vtss_state->qos.imap_ix;
-        m->ix[0].entry_len = VTSS_QOS_INGRESS_MAP_ROWS;
-        m->ix[0].reserved  = VTSS_QOS_INGRESS_MAP_IX_RESERVED;
 
         /* Store function pointers locally. Check for missing function pointers here and not every time they are called */
         m->key2len = vtss_qos_ingress_map_key2len;
@@ -1454,17 +1476,12 @@ vtss_rc vtss_qos_inst_create(struct vtss_state_s *vtss_state)
 
         /* Id table */
         m->id.entry     = vtss_state->qos.emap_id;
-        m->id.entry_len = VTSS_QOS_EGRESS_MAP_IDS;
 
         /* Ix table resource A */
         m->ix[0].entry     = vtss_state->qos.emap_ix_a;
-        m->ix[0].entry_len = VTSS_QOS_EGRESS_MAP_ROWS;
-        m->ix[0].reserved  = VTSS_QOS_EGRESS_MAP_IX_RESERVED;
 
         /* Ix table resource B */
         m->ix[1].entry     = vtss_state->qos.emap_ix_b;
-        m->ix[1].entry_len = VTSS_QOS_EGRESS_MAP_ROWS;
-        m->ix[1].reserved  = VTSS_QOS_EGRESS_MAP_IX_RESERVED;
 
         /* Store function pointers locally. Check for missing function pointers here and not every time they are called */
         m->key2len = vtss_qos_egress_map_key2len;
@@ -1670,7 +1687,7 @@ vtss_rc vtss_cmn_qce_add(vtss_state_t *vtss_state,
     }
 #endif
 
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     if (vtss_state->arch == VTSS_ARCH_JR2 || vtss_state->arch == VTSS_ARCH_ANT) {
         /* Jaguar-2 consumes full row */
         key->key_type = VTSS_VCAP_KEY_TYPE_MAC_IP_ADDR;

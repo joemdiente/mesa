@@ -1663,13 +1663,26 @@ vtss_rc vtss_phy_10g_id_get_priv(vtss_state_t *vtss_state,
                 return VTSS_RC_ERROR;
             }
         } else {
-            if (phy_id->channel_id <= 1) {
-                phy_id->phy_api_base_no = vtss_state->phy_10g_state[port_no].phy_api_base_no;
-            } else {
-                /* Assumes that channel 0 i.e base port is last in the order of front panel ports */
-                phy_id->phy_api_base_no = get_front_port_from_channel_id(vtss_state, port_no, 2, vtss_state->phy_10g_state[port_no].chip_no);
+            if (!vtss_state->phy_10g_state[port_no].mode.channel_high_to_low) {
+                if (phy_id->channel_id <= 1) {
+                    phy_id->phy_api_base_no = vtss_state->phy_10g_state[port_no].phy_api_base_no;
+                } else {
+                    /* Assumes that channel 0 i.e base port is last in the order of front panel ports */
+                    phy_id->phy_api_base_no = get_front_port_from_channel_id(vtss_state, port_no, 2, vtss_state->phy_10g_state[port_no].chip_no);
+                }
+             } else {
+                /* When Channel id in the PHY is decreasing with respect to increasing port Number
+                 * then "ts_base_port" of channel 3 and channel 2 is equal to port number of channel 2
+                 * and "ts_base_port" of channel 1 and channel 0 is equal to port number of channe 0
+                 * this is because channel 0 and 1 share one PTP engine and Channel 2 and 3 share one PTP Engine
+                 * "phy_api_base_no" is equal to first port number of the PHY.
+                 */
+                if(phy_id->channel_id == 3 || phy_id->channel_id == 2) {
+                    phy_id->phy_api_base_no = vtss_state->phy_10g_state[port_no].phy_api_base_no + 1;
+                } else {
+                    phy_id->phy_api_base_no = vtss_state->phy_10g_state[port_no].phy_api_base_no + 3;
+                }
             }
-
         }
     }
 
@@ -3422,14 +3435,6 @@ static vtss_rc vtss_phy_ts_csr_set_priv(vtss_state_t *vtss_state,
 
         vtss_state->phy_ts_port_conf[port_no].egr_reg_mask = mask;
         w_mask = (VTSS_F_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_MASK_EGR_ANALYZER_ERROR_MASK | VTSS_F_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_MASK_EGR_RW_FCS_ERR_MASK | VTSS_F_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_MASK_EGR_TS_LOADED_MASK | VTSS_F_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_MASK_EGR_TS_OVERFLOW_MASK);
-        /* At the time of enabling the FIFO events, the existing FIFO sticky bits need to be cleared. After enabling the FIFO event, sticky bits would be set again based on FIFO condition or for next packet.
-           The change in sticky bits is needed to raise the interrupt in switch. Since first 4 bits are related to FIFO events, mask of '0xf' is used here. In future, it may need to be decided
-           whether it is needed or not for the rest of the events. */
-        if (mask & 0xf) {
-            u32 tmp_stat = mask & 0xf;
-            VTSS_RC(VTSS_PHY_TS_WRITE_CSR(port_no, VTSS_PHY_TS_PROC_BLK_ID(0),
-                                          VTSS_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_STATUS, &tmp_stat));
-        }
         VTSS_RC(warm_wr_masked(vtss_state, port_no, VTSS_PHY_TS_PROC_BLK_ID(0), VTSS_PTP_EGR_IP_1588_CFG_STAT_EGR_INT_MASK, mask, w_mask, __FUNCTION__,  __LINE__));
 
         /*LTC Interrupts mask register*/
@@ -3676,6 +3681,7 @@ static vtss_rc vtss_phy_ts_csr_ptptime_get_priv(
     if ((vtss_state->phy_ts_port_conf[port_no].is_gen2 == TRUE) &&
         (vtss_state->phy_ts_port_conf[port_no].auto_clear_ls == TRUE)) {
         if (value & VTSS_F_PTP_IP_1588_LTC_LTC_CTRL_LTC_SAVE_ENA) {
+            VTSS_I("ltc save bit not cleared for port %d\n", port_no);
             return VTSS_RC_ERROR;
         }
     } else {
@@ -4308,7 +4314,10 @@ static vtss_rc vtss_phy_ts_signature_set_priv(vtss_state_t *vtss_state,
  */
 static vtss_rc vtss_phy_ts_fifo_empty_priv(const vtss_inst_t inst,
                                            vtss_state_t *vtss_state,
-                                           const vtss_port_no_t port_no)
+                                           const vtss_port_no_t port_no,
+                                           vtss_phy_ts_fifo_entry_t ts_list[],
+                                           uint32_t                 *const num,
+                                           BOOL                     callback)
 {
     u32   value = 0;
     u32   loop_cnt = 5;
@@ -4323,13 +4332,18 @@ static vtss_rc vtss_phy_ts_fifo_empty_priv(const vtss_inst_t inst,
     vtss_phy_ts_fifo_status_t   status = VTSS_PHY_TS_FIFO_SUCCESS;
     u32   val_1st = 0, val_2nd = 0;
 
-    vtss_phy_ts_fifo_read cb;
-    void *cx;
-    if (vtss_state->ts_fifo_cb == NULL) {
-        return VTSS_RC_ERROR;
+    vtss_phy_ts_fifo_read cb = NULL;
+    void *cx = NULL;;
+
+    if (callback) {
+        if (vtss_state->ts_fifo_cb == NULL) {
+            return VTSS_RC_ERROR;
+        }
+        cb = vtss_state->ts_fifo_cb;
+        cx = vtss_state->cntxt;
+    } else {
+        *num = 0;
     }
-    cb = vtss_state->ts_fifo_cb;
-    cx = vtss_state->cntxt;
     sig_mask = vtss_state->phy_ts_port_conf[port_no].sig_mask;
 
     /* Step 1:: Loop reading the TSFIFO_0 register, until TS_EMPTY bit = 0 */
@@ -4513,12 +4527,21 @@ static vtss_rc vtss_phy_ts_fifo_empty_priv(const vtss_inst_t inst,
                    signature.dest_mac[4],
                    signature.dest_mac[5]);
 
-            status = VTSS_PHY_TS_FIFO_SUCCESS;
-            /* avoid using vtss_state while outside the API lock, as the API may be called from an other thread */
-            VTSS_EXIT();
-            /* call out of the API */
-            cb(inst, port_no, &ts, &signature, cx, status);
-            VTSS_ENTER();
+            if (callback) {
+                status = VTSS_PHY_TS_FIFO_SUCCESS;
+                /* avoid using vtss_state while outside the API lock, as the API may be called from an other thread */
+                VTSS_EXIT();
+                /* call out of the API */
+                cb(inst, port_no, &ts, &signature, cx, status);
+                VTSS_ENTER();
+            } else {
+                ts_list[*num].sig = signature;
+                ts_list[*num].ts = ts;
+                (*num)++;
+                if (*num >= VTSS_PHY_TS_FIFO_MAX_ENTRIES) {
+                    break;
+                }
+            }
         } while (depth > 1);  /* Step 4a:: If TS_FIFO_LEVEL > 1, go back and repeat steps 2 through 4 */
 
         /* Step 4b:: If TS_FIFO_LEVEL = 1, finished handling the TS_FIFO */
@@ -6053,6 +6076,7 @@ vtss_rc vtss_phy_ts_fifo_empty(const vtss_inst_t       inst,
 {
     vtss_state_t *vtss_state;
     vtss_rc      rc;
+    uint32_t     size;
 
     VTSS_ENTER();
     do {
@@ -6065,7 +6089,7 @@ vtss_rc vtss_phy_ts_fifo_empty(const vtss_inst_t       inst,
                 rc = VTSS_RC_ERROR;
                 break;
             }
-            rc = vtss_phy_ts_fifo_empty_priv(inst, vtss_state, port_no);
+            rc = vtss_phy_ts_fifo_empty_priv(inst, vtss_state, port_no, NULL, &size, TRUE);
         }
     } while (0);
 
@@ -6101,6 +6125,38 @@ vtss_rc vtss_phy_ts_fifo_read_cb_get(const vtss_inst_t      inst,
         *rd_cb = vtss_state->ts_fifo_cb;
         *cntxt = vtss_state->cntxt;
     }
+    VTSS_EXIT();
+    return rc;
+}
+
+vtss_rc vtss_phy_ts_fifo_get(const vtss_inst_t        inst,
+                             const vtss_port_no_t     port_no,
+                             vtss_phy_ts_fifo_entry_t ts_list[],
+                             const size_t             size,
+                             uint32_t                 *const num)
+{
+    vtss_state_t *vtss_state;
+    vtss_rc      rc;
+
+    VTSS_ENTER();
+    do {
+        if (size < VTSS_PHY_TS_FIFO_MAX_ENTRIES) {
+            rc = VTSS_RC_ERROR;
+            break;
+        }
+        if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
+            if (vtss_state->phy_ts_port_conf[port_no].port_ts_init_done == FALSE) {
+                rc = VTSS_RC_ERROR;
+                break;
+            }
+            if (vtss_state->phy_ts_port_conf[port_no].tx_fifo_mode != VTSS_PHY_TS_FIFO_MODE_NORMAL) {
+                rc = VTSS_RC_ERROR;
+                break;
+            }
+            rc = vtss_phy_ts_fifo_empty_priv(inst, vtss_state, port_no, ts_list, num, FALSE);
+        }
+    } while (0);
+
     VTSS_EXIT();
     return rc;
 }
@@ -9340,7 +9396,7 @@ static vtss_rc vtss_phy_ts_ip1_generic_conf_priv(
     }
 
     value = VTSS_F_ANA_IP1_NXT_PROTOCOL_IP1_MODE_IP1_FLOW_OFFSET(new_gen_conf->comm_opt.flow_offset);
-    value |= VTSS_F_ANA_IP1_NXT_PROTOCOL_IP1_MODE_IP1_MODE(3);
+    value |= VTSS_F_ANA_IP1_NXT_PROTOCOL_IP1_MODE_IP1_MODE(2);
     VTSS_RC(VTSS_PHY_TS_WRITE_CSR(port_no, blk_id, VTSS_ANA_IP1_NXT_PROTOCOL_IP1_MODE, &value));
 
     for (i = eng_conf->flow_st_index; i <= eng_conf->flow_end_index; i++) {
@@ -11038,6 +11094,43 @@ static vtss_rc vtss_phy_ts_engine_init_priv(
             break;
         }
         break;
+    case VTSS_PHY_TS_ENCAP_ETH_HSR_PTP:
+        VTSS_RC(VTSS_RC_COLD(vtss_phy_ts_eth1_next_comp_etype_set_priv(vtss_state, port_no, blk_id,
+                                                                    eng_id, VTSS_PHY_TS_NEXT_COMP_IP1, 0x892f)));
+        /* set eth1 conf */
+        VTSS_RC(VTSS_RC_COLD(vtss_phy_ts_eth1_def_conf_priv(vtss_state, eng_parm,
+                                                         &vtss_phy_ts_def_inner_eth_conf_for_ptp)));
+        memset(&flow_conf->flow_conf.gen.eth1_opt, 0, sizeof(vtss_phy_ts_eth_conf_t));
+        memcpy(&flow_conf->flow_conf.gen.eth1_opt.comm_opt,
+               &vtss_phy_ts_def_inner_eth_conf_for_ptp.comm_opt,
+               sizeof(vtss_phy_ts_def_inner_eth_conf_for_ptp.comm_opt));
+        /* copy flow_opt at flow_st_index as it is the start index for the engine */
+        memcpy(&flow_conf->flow_conf.gen.eth1_opt.flow_opt[flow_st_index],
+               &vtss_phy_ts_def_inner_eth_conf_for_ptp.flow_opt[0],
+               sizeof(vtss_phy_ts_def_inner_eth_conf_for_ptp.flow_opt[0]));
+        flow_conf->flow_conf.gen.eth1_opt.comm_opt.etype = 0x892f;
+
+        /* set IP1 next comparator */
+        VTSS_RC(VTSS_RC_COLD(vtss_phy_ts_ip1_next_comp_set_priv(vtss_state, port_no, blk_id,
+                                                             VTSS_PHY_TS_NEXT_COMP_PTP_OAM, 6)));
+        VTSS_RC(VTSS_RC_COLD(vtss_phy_ts_generic_def_conf_priv(vtss_state, eng_parm, &vtss_phy_ts_def_gen_conf)));
+        memset(&flow_conf->flow_conf.gen.gen_opt, 0, sizeof(vtss_phy_ts_gen_conf_t));
+        memcpy(&flow_conf->flow_conf.gen.gen_opt.comm_opt,
+               &vtss_phy_ts_def_gen_conf.comm_opt,
+               sizeof(vtss_phy_ts_def_gen_conf.comm_opt));
+        /* copy flow_opt at flow_st_index as it is the start index for the engine */
+        memcpy(&flow_conf->flow_conf.gen.gen_opt.flow_opt[flow_st_index],
+               &vtss_phy_ts_def_gen_conf.flow_opt[0], sizeof(vtss_phy_ts_def_gen_conf.flow_opt[0]));
+
+        memset(action_conf, 0, sizeof(vtss_phy_ts_engine_action_t));
+        action_conf->action_ptp = TRUE;
+        action_conf->action_gen = FALSE;
+        memcpy(&action_conf->action.ptp_conf[0],&vtss_phy_ts_def_ptp_action, sizeof(vtss_phy_ts_ptp_engine_action_t));
+        rc = vtss_phy_ts_ptp_def_conf_priv(vtss_state, ingress, eng_parm);
+        //memcpy(&action_conf->action.gen_conf[0],
+        //       &vtss_phy_ts_def_gen_action, sizeof(vtss_phy_ts_generic_action_t));
+        //rc = VTSS_RC_COLD(vtss_phy_ts_gen_action_def_conf_priv(vtss_state, ingress, eng_parm));
+        break;
 
     default:
         VTSS_N("Port(%u) engine_init:: invalid encapsulation type: %u", (u32)port_no, encap_type);
@@ -12164,9 +12257,10 @@ static vtss_rc vtss_phy_ts_engine_flow_set_priv(
         rc = VTSS_RC_COLD(vtss_phy_ts_ptp_ts_all_conf_priv(vtss_state, eng_parm));
         break;
     case VTSS_PHY_TS_ENCAP_ETH_GEN:
+    case VTSS_PHY_TS_ENCAP_ETH_HSR_PTP:
         if ((rc = VTSS_RC_COLD(vtss_phy_ts_eth1_next_comp_etype_set_priv(vtss_state, port_no, eng_parm->blk_id,
                                                                          eng_id, VTSS_PHY_TS_NEXT_COMP_IP1,
-                                                                         new_flow_conf->flow_conf.gen.eth1_opt.comm_opt.etype))) != VTSS_RC_OK) {
+                                                                         0x892f))) != VTSS_RC_OK) {
             break;
         }
         if ((rc = vtss_phy_ts_eth1_conf_priv(vtss_state, eng_parm,
@@ -16002,6 +16096,7 @@ vtss_rc vtss_phy_ts_init_conf_get(const vtss_inst_t     inst,
             conf->tx_ts_len = vtss_state->phy_ts_port_conf[port_no].tx_ts_len;
             conf->tc_op_mode = vtss_state->phy_ts_port_conf[port_no].tc_op_mode;
             conf->one_step_txfifo = vtss_state->phy_ts_port_conf[port_no].one_step_txfifo;
+            conf->auto_clear_ls = vtss_state->phy_ts_port_conf[port_no].auto_clear_ls;
 #ifdef VTSS_CHIP_10G_PHY
             conf->xaui_sel_8487 = vtss_state->phy_ts_port_conf[port_no].xaui_sel_8487;
 #endif
@@ -22026,6 +22121,9 @@ static void vtss_phy_ts_dis_action(vtss_phy_ts_engine_action_t *act, const vtss_
                 break;
             case VTSS_PHY_TS_PTP_DELAY_COMP_ENGINE:
                 pr("Clock Mode :: Delay Compensation\n");
+                break;
+            case VTSS_PHY_TS_PTP_CLOCK_MODE_NONE:
+                pr("Clock Mode :: None\n");
                 break;
             }
 

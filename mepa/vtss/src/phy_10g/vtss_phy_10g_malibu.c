@@ -17,6 +17,7 @@
 /*lint -sem(malibu_phy_10g_event_enable,           thread_protected) */
 /*lint -sem(malibu_phy_10g_event_poll,             thread_protected) */
 /*lint -sem(malibu_phy_10g_extended_event_poll,    thread_protected) */
+/*lint -sem(malibu_phy_10g_extended2_event_poll,   thread_protected) */
 /*lint -sem(malibu_phy_10g_ckout_set,              thread_protected) */
 /*lint -sem(malibu_phy_10g_host_clk_set,           thread_protected) */
 /*lint -sem(malibu_phy_10g_host_recvrd_clk_set,    thread_protected) */
@@ -564,6 +565,20 @@ static BOOL malibu_is32reg(u32 dev, u32 addr)
  */
 
 #define  VTSS_F_LINE_PMA_BYPASS_CONFIG_STAT_BYPASS_CFG1_FIFO_AUTO_RESET_EN  VTSS_BIT(2)
+#define VTSS_HOST_PMA_APC_SDET_SEL_APC_SDET_SEL VTSS_IOREG(0x9, 0, 0xA104)
+#define VTSS_F_HOST_PMA_APC_SDET_SEL_APC_SDET_SEL_LOPC_STAT VTSS_BIT(13)
+
+//MAC BLOCK LF/RF interrupts
+#define  VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK  VTSS_BIT(4)
+#define  VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK  VTSS_BIT(3)
+#define  VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_LOCAL_ERR_STATE_STICKY  VTSS_BIT(4)
+#define  VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_REMOTE_ERR_STATE_STICKY  VTSS_BIT(3)
+#define  VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK  VTSS_BIT(4)
+#define  VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK  VTSS_BIT(3)
+#define  VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_LOCAL_ERR_STATE_STICKY  VTSS_BIT(4)
+#define  VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_REMOTE_ERR_STATE_STICKY  VTSS_BIT(3)
+
+
 
 static vtss_rc phy_10g_kr_conf_init(vtss_state_t *vtss_state,
                                     const vtss_port_no_t port_no);
@@ -1389,6 +1404,9 @@ static vtss_rc phy_10g_kr_conf_init(vtss_state_t *vtss_state,
     int i;
     vtss_rc rc = VTSS_RC_OK;
     vtss_phy_10g_base_kr_conf_t *kr_conf = &vtss_state->phy_10g_state[port_no].kr_conf;
+    vtss_phy_10g_base_kr_conf_t *host_kr_conf = &vtss_state->phy_10g_state[port_no].host_kr_conf;
+
+    /* LINE Side output buffer settings */
     CSR_RD(port_no, VTSS_LINE_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0, &cfg0);
     CSR_RD(port_no, VTSS_LINE_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG1, &cfg1);
     CSR_RD(port_no, VTSS_LINE_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG2, &cfg2);
@@ -1421,22 +1439,22 @@ static vtss_rc phy_10g_kr_conf_init(vtss_state_t *vtss_state,
         v[i] = cfg2>>(6*i) & 0x3f;
         if (v[i] & 0x20) v[i] |= ~0x3f; /* sign extension */
     }
-    kr_conf->cm1 = (-v[3]- v[0] - 1)/2;
-    kr_conf->c0 = (v[3] - v[1] -1)/2;
-    kr_conf->c1 = (v[1] - v[0])/2;
-    kr_conf->ampl = 1275 - 25*VTSS_X_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_LEVN(cfg0) -
+    host_kr_conf->cm1 = (-v[3]- v[0] - 1)/2;
+    host_kr_conf->c0 = (v[3] - v[1] -1)/2;
+    host_kr_conf->c1 = (v[1] - v[0])/2;
+    host_kr_conf->ampl = 1275 - 25*VTSS_X_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_LEVN(cfg0) -
         200*((cfg0 & VTSS_F_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_INCR_LEVN) ? 1 : 0);
 
     r_ctrl = VTSS_X_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG1_PREDRV_R_CTRL(cfg1);
     c_ctrl = VTSS_X_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG1_PREDRV_C_CTRL(cfg1);
-    kr_conf->slewrate = VTSS_SLEWRATE_INVALID;
+    host_kr_conf->slewrate = VTSS_SLEWRATE_INVALID;
     for (i = 0; i < VTSS_SLEWRATE_INVALID; i++) {
         if ((r_ctrl == predrv_ctrl_table[i] [1]) && (c_ctrl == predrv_ctrl_table[i] [0])) {
-            kr_conf->slewrate = i;
+            host_kr_conf->slewrate = i;
         }
     }
-    kr_conf->en_ob = ( cfg0 & VTSS_F_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_EN_OB) ? TRUE : FALSE;
-    kr_conf->ser_inv = ( cfg0 & VTSS_F_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_SER_INV) ? TRUE : FALSE;
+    host_kr_conf->en_ob = ( cfg0 & VTSS_F_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_EN_OB) ? TRUE : FALSE;
+    host_kr_conf->ser_inv = ( cfg0 & VTSS_F_HOST_PMA_32BIT_SD10G65_OB_SD10G65_OB_CFG0_SER_INV) ? TRUE : FALSE;
 
     return rc;
 }
@@ -12523,25 +12541,43 @@ static vtss_rc malibu_phy_10g_clause_37_control_set(vtss_state_t *vtss_state,
 
     if (!vtss_state->sync_calling_private) {
         for (i = l_h; i < pcs_cnt_max; i++) {
+            //  i=0 ==> Line Side
+            //  i=1 ==> Host Side
             if(i) {
                 control = &vtss_state->phy_10g_state[port_no].clause_37;
             } else {
                 control = &vtss_state->phy_10g_state[port_no].host_clause_37;
             }
 
-            VTSS_I(" port %u clause 37 aneg is being configured on 1G PCS of %s \n",port_no,i? "LINE" : "HOST");
+            VTSS_I(" port %u clause 37 aneg is being configured on 1G PCS of %s \n",port_no, i? "LINE" : "HOST");
             /* Aneg capabilities for this port */
             VTSS_RC(phy_10g_clause_37_adv_set(&value, &control->advertisement, control->enable));
             CSR_WARM_WRM(port_no, PST(VTSS, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG2),
                     PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG2_ADV_ABILITY(value)),
                     PST(VTSS_M, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG2_ADV_ABILITY));
 
-            /* Restart aneg */
-            CSR_COLD_WRM(port_no, PST(VTSS, i,PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG),
+            CSR_RD(port_no, PST(VTSS, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_MODE_CFG), &value);
+
+            /* Per PCSC1G_ANEG_CFG2, If PCS1G_MODE_CFG is in SGMII Mode, Must set SW_Resolve_ENA in PCS1G_ANEG_CFG */
+            if (value & PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_MODE_CFG_SGMII_MODE_ENA)) {
+                VTSS_I(" port %u clause 37 1G PCS of %s   Restart ANEG - SGMII MODE \n",port_no,i? "LINE" : "HOST");
+                /* Restart aneg */
+                CSR_COLD_WRM(port_no, PST(VTSS, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG),
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_RESTART_ONE_SHOT) |
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_SW_RESOLVE_ENA) |
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_ENA),
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_RESTART_ONE_SHOT) |
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_SW_RESOLVE_ENA) |
+                    PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_ENA));
+            } else {
+                VTSS_I(" port %u clause 37 1G PCS of %s   Restart ANEG - NOT SGMII MODE\n",port_no,i? "LINE" : "HOST");
+                /* Restart aneg */
+                CSR_COLD_WRM(port_no, PST(VTSS, i,PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG),
                     PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_RESTART_ONE_SHOT) |
                     PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_ENA),
                     PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_RESTART_ONE_SHOT) |
                     PST(VTSS_F, i, PCS1G_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG_ANEG_ENA));
+            }
 
             if (!control->enable) {
                 /* Disable Aneg */
@@ -13026,7 +13062,6 @@ static vtss_rc vtss_phy_10g_wis_event_enable_private(vtss_state_t *vtss_state,
     CSR_WARM_WRM(port_no, VTSS_WIS_EWIS_Interrupt_Mask_3_EWIS_INTR_MASKA_3, (vtss_state->phy_10g_state[port_no].ev_mask & VTSS_PHY_EWIS_B3_THRESH_EV)? 0x0001 : 0, 0x0001);
     CSR_WARM_WRM(port_no, VTSS_WIS_EWIS_Interrupt_Mask_3_EWIS_INTR_MASKB_3, (vtss_state->phy_10g_state[port_no].ev_mask & VTSS_PHY_EWIS_REIL_THRESH_EV)? 0x0008 : 0, 0x0008);
     CSR_WARM_WRM(port_no, VTSS_WIS_EWIS_Interrupt_Mask_3_EWIS_INTR_MASKB_3, (vtss_state->phy_10g_state[port_no].ev_mask & VTSS_PHY_EWIS_REIP_THRESH_EV)? 0x0010 : 0, 0x0010);
-#endif /* VTSS_FEATURE_WIS */
     /* Enable WIS0 and WIS1 interrupts to propagate at INTR[0] Pin */
     CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(0),
                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_WIS1_INTR_EN,
@@ -13040,8 +13075,100 @@ static vtss_rc vtss_phy_10g_wis_event_enable_private(vtss_state_t *vtss_state,
                     VTSS_BIT(2*channel_id),
                     VTSS_BIT(2*channel_id));
     }
+#endif /* VTSS_FEATURE_WIS */
     return VTSS_RC_OK;
 }
+
+static vtss_rc vtss_phy_10g_host_lopc_enable_private(vtss_state_t *vtss_state,
+                                                     const vtss_port_no_t port_no)
+{
+    u8   channel_id, gpio_no = 0;
+    u32  value = 0;
+    channel_id = vtss_state->phy_10g_state[port_no].channel_id;
+    if (vtss_state->phy_10g_state[port_no].ex2_ev_mask & VTSS_PHY_10G_HOST_LOPC_EV) {
+        /* Set Host LOPC event with the help of GPIO interrupt */
+        CSR_RD(port_no,CHNLx_HOST_LOPC_INPUT(channel_id),&value);
+        gpio_no = VTSS_X_GPIO_CTRL_GPIO_CFG_STAT_CH0_HOST_LOPC_CFG_CH0_HOST_LOPC_SEL(value);
+
+        VTSS_D("port %u:ch_id %u gpio %u gpio mode %u input mode %u use as interrupt %s\n",
+                port_no,channel_id,gpio_no,
+                vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].mode,
+                vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].input,
+                vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].use_as_intrpt ? "TRUE" : "FALSE");
+        if ((vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].use_as_intrpt == TRUE) &&
+             (vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].mode == VTSS_10G_PHY_GPIO_IN) &&
+             (vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].input == VTSS_10G_GPIO_INPUT_HOST_LOPC) ) {
+              /* As on VSC825X there are no interrupt masks for some of the interrupts like LOPC
+                 we depend on GPIOs to propagate interrupt and thus we configure GPIO mask*/
+             if (gpio_no > 31) {
+                 CSR_RD(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_CHANGE1,&value);
+                 CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_CHANGE1,
+                         VTSS_BIT(gpio_no-32) & value,
+                         VTSS_BIT(gpio_no-32));
+
+                 CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_MASK1,
+                         VTSS_BIT(gpio_no-32),
+                         VTSS_BIT(gpio_no-32));
+             } else {
+                 CSR_RD(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_CHANGE0,&value);
+                 CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_CHANGE0,
+                         VTSS_BIT(gpio_no) & value,
+                         VTSS_BIT(gpio_no));
+                 CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_MASK0,
+                         VTSS_BIT(gpio_no),
+                         VTSS_BIT(gpio_no));
+             }
+
+        }
+    } else {
+        /* Clear HOST LOPC event */
+        CSR_RD(port_no,CHNLx_HOST_LOPC_INPUT(channel_id),&value);
+        gpio_no = VTSS_X_GPIO_CTRL_GPIO_CFG_STAT_CH0_HOST_LOPC_CFG_CH0_HOST_LOPC_SEL(value);
+        if (vtss_state->phy_10g_state[port_no].gpio_mode[gpio_no].use_as_intrpt == TRUE) {
+            if (gpio_no > 31) {
+                CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_MASK1,
+                        0,
+                        VTSS_BIT(gpio_no-32));
+            } else {
+                CSR_WARM_WRM(port_no,VTSS_GPIO_CTRL_GPIO_CFG_STAT_GPIO_MASK0,
+                        0,
+                        VTSS_BIT(gpio_no));
+            }
+        }
+    }
+   return VTSS_RC_OK;
+}
+
+static vtss_rc vtss_phy_10g_host_pcs_event_enable_private(vtss_state_t *vtss_state,
+                                                          const vtss_port_no_t port_no)
+{
+    u8       channel_id;
+    VTSS_I("Enable PCS event\n");
+   /* Enable the PCS Host side block interrupts */
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_RX_CHAR_DEC_CNT_THRESH_EV))? 0x0001 : 0, 0x0001);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_TX_CHAR_ENC_CNT_THRESH_EV))? 0x0002 : 0, 0x0002);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_RX_BLK_DEC_CNT_THRESH_EV))? 0x0004 : 0, 0x0004);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_TX_BLK_ENC_CNT_THRESH_EV))? 0x0008 : 0, 0x0008);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_RX_SEQ_CNT_THRESH_EV))? 0x0010 : 0, 0x0010);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_TX_SEQ_CNT_THRESH_EV))? 0x0020 : 0, 0x0020);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_FEC_UNFIXED_CNT_THRESH_EV))? 0x0040 : 0, 0x0040);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_FEC_FIXED_CNT_THRESH_EV))? 0x0080 : 0, 0x0080);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_HIGHBER_EV))? 0x0100 : 0, 0x0100);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_10G_RX_LINK_STAT_EV))? 0x0200 : 0, 0x0200);
+
+   /* Enable the PCS10g interrupts on INTR[1]*/
+   /* HPCS10G_INTR_EN */
+   CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HPCS10G_INTR_EN,
+                VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HPCS10G_INTR_EN);
+   /* PCS block interrupts at aggr_intr[0] for all channels */
+   for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+       CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                    VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+   }
+   return VTSS_RC_OK;
+}
+
 static vtss_rc vtss_phy_10g_pcs_event_enable_private(vtss_state_t *vtss_state, 
                                              const vtss_port_no_t port_no)
 {
@@ -13071,6 +13198,7 @@ static vtss_rc vtss_phy_10g_pcs_event_enable_private(vtss_state_t *vtss_state,
    }
    return VTSS_RC_OK;
 }
+
 static vtss_rc vtss_phy_10g_pma_event_enable_private(vtss_state_t *vtss_state,
                                              const vtss_port_no_t port_no)
 {
@@ -13094,24 +13222,226 @@ static vtss_rc vtss_phy_10g_pma_event_enable_private(vtss_state_t *vtss_state,
     }
    return VTSS_RC_OK;
 }
-static vtss_rc malibu_phy_10g_event_enable( vtss_state_t *vtss_state,
-                                            const vtss_port_no_t port_no)
+
+static vtss_rc vtss_phy_10g_fifo_event_enable_private(vtss_state_t *vtss_state,
+                                             const vtss_port_no_t port_no)
 {
-    BOOL xtnd_event_en;
+    u8 channel_id;
+    VTSS_I("Enable TX FIFO interrupt\n");
+    /* Enable Line TX FIFO interrupts */
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_TX_FIFO_UNDERFLOW_EV)) ? 0x0001 : 0, 0x0001);
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_TX_FIFO_OVERFLOW_EV)) ? 0x0002 : 0, 0x0002);
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+    /* Enable Line RX FIFO interrupts */
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_RX_FIFO_UNDERFLOW_EV)) ? 0x0004 : 0, 0x0004);
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_RX_FIFO_OVERFLOW_EV)) ? 0x0008 : 0, 0x0008);
+    /* Enable Host TX FIFO interrupts */
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_TX_FIFO2_UNDERFLOW_EV)) ? 0x0010 : 0, 0x0010);
+    CSR_WARM_WRM(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_10G_TX_FIFO2_OVERFLOW_EV)) ? 0x0020 : 0, 0x0020);
+    /* Enable FIFO interrupts at INTR[1] */
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HEGR_FIFO_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HEGR_FIFO_INTR_EN);
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LEGR_FIFO_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LEGR_FIFO_INTR_EN);
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LIGR_FIFO_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LIGR_FIFO_INTR_EN);
+    /* FIFO interrupts at aggr_intr[0] for all channels */
+    for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+       CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                    VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+    }
+   return VTSS_RC_OK;
+}
+
+static vtss_rc vtss_phy_mac_fc_buffer_event_enable_private(vtss_state_t *vtss_state,
+                                                           const vtss_port_no_t port_no)
+{
+    u8       channel_id;
+    VTSS_I("Enable MAC FC buffer event\n");
+    /* Enable the MAC FC buffer block interrupts */
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_XOFF_PAUSE_GEN_STICKY_MASK))? 0x0001 : 0, 0x0001);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_XON_PAUSE_GEN_STICKY_MASK))? 0x0002 : 0, 0x0002);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_UNCORRECTED_FRM_DROP_STICKY_MASK))? 0x0004 : 0, 0x0004);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_UNCORRECTED_FRM_DROP_STICKY_MASK))? 0x0008 : 0, 0x0008);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_CTRL_QUEUE_OVERFLOW_DROP_STICKY_MASK))? 0x10000 : 0, 0x10000);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_CTRL_QUEUE_UNDERFLOW_DROP_STICKY_MASK))? 0x20000 : 0, 0x20000);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_DATA_QUEUE_OVERFLOW_DROP_STICKY_MASK))? 0x40000 : 0, 0x40000);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_DATA_QUEUE_UNDERFLOW_DROP_STICKY_MASK))? 0x80000 : 0, 0x80000);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_OVERFLOW_DROP_STICKY_MASK))? 0x100000 : 0, 0x100000);
+    CSR_WARM_WRM(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_UNDERFLOW_DROP_STICKY_MASK))? 0x200000 : 0, 0x200000);
+
+    /* Enable the PCS1g interrupts on INTR[1] */
+    /* FC_BUF_INTR_EN */
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_FCBUF_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_FCBUF_INTR_EN);
+    /* FC buffer interrupts at aggr_intr[0] for all channels */
+    for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+        CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                     VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+    }
+    return VTSS_RC_OK;
+}
+
+static vtss_rc vtss_phy_1g_pcs_event_enable_private(vtss_state_t *vtss_state,
+                                                    const vtss_port_no_t port_no)
+{
+    u8       channel_id;
+    VTSS_I("Enable 1g PCS event\n");
+    /* Enable the 1g PCS Line side block interrupts */
+    CSR_WARM_WRM(port_no, VTSS_LINE_PCS1G_PCS1G_XGMII_CFG_STATUS_PCS1G_XGMII_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_LINE_1G_XGMII_MASK_OUT_OF_SYNC_MASK))? 0x0100 : 0, 0x0100);
+    CSR_WARM_WRM(port_no, VTSS_LINE_PCS1G_PCS1G_XGMII_CFG_STATUS_PCS1G_XGMII_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_LINE_1G_XGMII_MASK_LINK_DOWN_MASK))? 0x0200 : 0, 0x0200);
+    /* Enable the 1g PCS Host side block interrupts */
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS1G_PCS1G_XGMII_CFG_STATUS_PCS1G_XGMII_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_1G_XGMII_MASK_OUT_OF_SYNC_MASK))? 0x0100 : 0, 0x0100);
+    CSR_WARM_WRM(port_no, VTSS_HOST_PCS1G_PCS1G_XGMII_CFG_STATUS_PCS1G_XGMII_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_HOST_1G_XGMII_MASK_LINK_DOWN_MASK))? 0x0200 : 0, 0x0200);
+
+    /* Enable the PCS1g interrupts on INTR[1]*/
+    /* LPCS1G_INTR_EN */
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LPCS1G_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LPCS1G_INTR_EN);
+    /* HPCS1G_INTR_EN */
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HPCS1G_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HPCS1G_INTR_EN);
+    /* PCS block interrupts at aggr_intr[0] for all channels */
+    for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+        CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                     VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+    }
+    return VTSS_RC_OK;
+}
+
+static vtss_rc vtss_phy_10g_mac_event_enable_private(vtss_state_t *vtss_state,
+                                                     const vtss_port_no_t port_no)
+{
+    u8 channel_id;
+    VTSS_I("Enable MAC Interrupts");
+    /*HOST MAC interrupts*/
+    CSR_WARM_WRM(port_no, VTSS_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK,
+            (vtss_state->phy_10g_state[port_no].ex_ev_mask & VTSS_PHY_10G_HOST_MAC_LOCAL_FAULT_EV)?
+            VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK : 0,
+            VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK);
+
+    CSR_WARM_WRM(port_no, VTSS_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK,
+            (vtss_state->phy_10g_state[port_no].ex_ev_mask & VTSS_PHY_10G_HOST_MAC_REMOTE_FAULT_EV)?
+            VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK : 0,
+            VTSS_F_HOST_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK);
+
+    /*Line MAC interrupts*/
+    CSR_WARM_WRM(port_no, VTSS_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK,
+            (vtss_state->phy_10g_state[port_no].ex_ev_mask & VTSS_PHY_10G_LINE_MAC_LOCAL_FAULT_EV)?
+            VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK : 0,
+            VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_LOCAL_ERR_STATE_STICKY_MASK);
+
+    CSR_WARM_WRM(port_no, VTSS_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK,
+            (vtss_state->phy_10g_state[port_no].ex_ev_mask & VTSS_PHY_10G_LINE_MAC_REMOTE_FAULT_EV)?
+            VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK : 0,
+            VTSS_F_LINE_MAC_STATUS_MAC_TX_MONITOR_STICKY_MASK_REMOTE_ERR_STATE_STICKY_MASK);
+
+    /*Enable HOST MAC interrupts at INTR[1]*/
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+            VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HMAC_INTR_EN,
+            VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_HMAC_INTR_EN);
+
+    /*Enable LINE MAC interrupts at INTR[1]*/
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+            VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LMAC_INTR_EN,
+            VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LMAC_INTR_EN);
+
+    /*MAC block interrupts at aggr_intr[0] for all channels*/
+    for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+        CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+    }
+
+    return VTSS_RC_OK;
+}
+
+
+
+static vtss_rc vtss_phy_10g_line_pma_event_enable_private(vtss_state_t *vtss_state,
+                                             const vtss_port_no_t port_no)
+{
+    u8 channel_id;
+    VTSS_I("Enable PMA interrupt\n");
+    /* Enable Line PMA interrupts */
+    CSR_WARM_WRM(port_no, VTSS_LINE_PMA_PMA_INTR_PMA_INTR_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_LINE_10G_RX_LOS_EV)) ? 0x0001 : 0, 0x0001);
+    CSR_WARM_WRM(port_no, VTSS_LINE_PMA_PMA_INTR_PMA_INTR_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_LINE_10G_RX_LOL_EV)) ? 0x0002 : 0, 0x0002);
+    CSR_WARM_WRM(port_no, VTSS_LINE_PMA_PMA_INTR_PMA_INTR_MASK,
+                 (vtss_state->phy_10g_state[port_no].ex2_ev_mask & ((u64)1 << VTSS_PHY_LINE_10G_TX_LOL_EV)) ? 0x0004 : 0, 0x0004);
+    /* Enable LPMA interrupts at INTR[1] */
+    CSR_WARM_WRM(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR(1),
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LPMA_INTR_EN,
+                 VTSS_F_GPIO_INTR_CTRL_GPIO_INTR_INTR_LPMA_INTR_EN);
+    /* LPMA block interrupts at aggr_intr[0] for all channels */
+    for(channel_id  = 0; channel_id < MALIBU_MAX_CHANNEL_ID; channel_id++) {
+       CSR_WARM_WRM(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_SRC_EN(0),
+                    VTSS_BIT((2*channel_id)+1), VTSS_BIT((2*channel_id)+1));
+    }
+   return VTSS_RC_OK;
+}
+
+
+static vtss_rc malibu_phy_10g_event_enable( vtss_state_t *vtss_state,
+                                            const vtss_port_no_t port_no,
+                                            BOOL event_enable,
+                                            BOOL extended_event_enable,
+                                            BOOL extended2_event_enable)
+{
     VTSS_D("Enter");
     /*Enable WIS block interrupts and PCS interrupts at aggr[0] */
    /* xtnd_event = vtss_state->phy_10g_state[port_no].ex_ev_mask;*/
-    xtnd_event_en = vtss_state->phy_10g_state[port_no].ex_ev_enable;
     VTSS_I("interrupt enabled\n");
-    if (!xtnd_event_en) {
+    if (event_enable) {
         if(vtss_phy_10g_wis_event_enable_private(vtss_state, port_no) != VTSS_RC_OK) 
             VTSS_E("port: %u\nFailed to enable WIS interrupts\n", port_no);
     }
-    if (xtnd_event_en) {
+    if (extended_event_enable) {
         if(vtss_phy_10g_pcs_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
             VTSS_E("port: %u\nFailed to enable PCS interrupts\n", port_no);
         if(vtss_phy_10g_pma_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
             VTSS_E("port: %u\nFailed to enable PMA interrupts\n", port_no); 
+        if(vtss_phy_10g_mac_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+            VTSS_E("port: %u\n Failed to enable MAC interrupts\n", port_no);
+    }
+    if (extended2_event_enable) {
+       if(vtss_phy_10g_host_pcs_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable Host PCS interrupts\n", port_no);
+       if(vtss_phy_10g_line_pma_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable Line PMA interrupts\n", port_no);
+       if(vtss_phy_10g_fifo_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable FIFO interrupts\n", port_no);
+       if(vtss_phy_mac_fc_buffer_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable MAC FC Buffer interrupts\n", port_no);
+       if(vtss_phy_1g_pcs_event_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable 1g PCS event interrupts\n", port_no);
+       if(vtss_phy_10g_host_lopc_enable_private(vtss_state, port_no) != VTSS_RC_OK)
+           VTSS_E("port: %u\nFailed to enable Host LOPC interrupts\n", port_no);
     }
     VTSS_D("Exit");
     return VTSS_RC_OK;
@@ -13334,7 +13664,6 @@ static vtss_rc vtss_phy_1g_extended_event_poll_private(vtss_state_t *vtss_state,
     CSR_RD(port_no, VTSS_HOST_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, &pending2);
     CSR_WR(port_no, VTSS_HOST_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, pending2);
 
-    *ex_events = 0;
     if (pending1 & 0x10) {
         *ex_events |= VTSS_PHY_1G_LINE_AUTONEG_RESTART_EV;
     }
@@ -13349,6 +13678,7 @@ static vtss_rc malibu_phy_10g_pcs_status_get (vtss_state_t *vtss_state,
                                                 const vtss_port_no_t port_no,
                                                 vtss_phy_10g_extnd_event_t  *const ex_events)
 {
+    *ex_events = 0;
     if (vtss_state->phy_10g_state[port_no].mode.oper_mode == VTSS_PHY_1G_MODE) {
         vtss_phy_1g_extended_event_poll_private(vtss_state, port_no, ex_events);
     }
@@ -13356,6 +13686,158 @@ static vtss_rc malibu_phy_10g_pcs_status_get (vtss_state_t *vtss_state,
     return (VTSS_RC_OK);
 }
           
+static vtss_rc vtss_phy_10g_extended2_event_poll_private(vtss_state_t                      *vtss_state,
+                                                         const vtss_port_no_t               port_no,
+                                                         vtss_phy_10g_extnd2_event_t *const ex2_events)
+{
+    u32   pending1, pending2, pending3, pending4, mask;
+
+    VTSS_D("vtss_phy_10g_extended2_event_poll_private port_no %u\n", port_no);
+    CSR_RD(port_no, VTSS_HOST_PCS10G_PCS_INTR_PEND1_PCS_INTR_PEND1, &pending1);
+    CSR_RD(port_no, VTSS_HOST_PCS10G_PCS_INTR_MASK1_PCS_INTR_MASK1, &mask);
+    CSR_WR(port_no, VTSS_HOST_PCS10G_PCS_INTR_PEND1_PCS_INTR_PEND1, pending1);
+    pending1 &= mask;
+
+    CSR_RD(port_no,VTSS_LINE_PMA_PMA_INTR_PMA_INTR_STAT, &pending2);
+    CSR_RD(port_no,VTSS_LINE_PMA_PMA_INTR_PMA_INTR_MASK, &mask);
+    CSR_WR(port_no,VTSS_LINE_PMA_PMA_INTR_PMA_INTR_STAT, pending2);
+    pending2 &= mask;
+
+    CSR_RD(port_no, VTSS_LINE_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, &pending3);
+    CSR_WR(port_no, VTSS_LINE_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, pending3);
+
+    CSR_RD(port_no, VTSS_HOST_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, &pending4);
+    CSR_WR(port_no, VTSS_HOST_PCS1G_PCS1G_CFG_STATUS_PCS1G_STICKY, pending4);
+
+    // *ex2_events = 0;
+    if (pending1 & 0x0001) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_RX_CHAR_DEC_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0002) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_TX_CHAR_ENC_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0004) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_RX_BLK_DEC_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0008) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_TX_BLK_ENC_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0010) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_RX_SEQ_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0020) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_TX_SEQ_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0040) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_FEC_UNFIXED_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0080) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_FEC_FIXED_CNT_THRESH_EV);
+    }
+    if (pending1 & 0x0100) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_HIGHBER_EV);
+    }
+    if (pending1 & 0x0200) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_10G_RX_LINK_STAT_EV);
+    }
+    if (pending2 & 0x0001) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_LINE_10G_RX_LOS_EV);
+    }
+    if (pending2 & 0x0002) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_LINE_10G_RX_LOL_EV);
+    }
+    if (pending2 & 0x0004) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_LINE_10G_TX_LOL_EV);
+    }
+
+    if (pending3 & 0x10) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_LINE_1G_XGMII_MASK_LINK_DOWN_MASK);
+    }
+    if (pending3 & 0x1) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_LINE_1G_XGMII_MASK_OUT_OF_SYNC_MASK);
+    }
+    if (pending4 & 0x10) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_1G_XGMII_MASK_LINK_DOWN_MASK);
+    }
+    if (pending4 & 0x1) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_HOST_1G_XGMII_MASK_OUT_OF_SYNC_MASK);
+    }
+    return VTSS_RC_OK;
+}
+
+static vtss_rc vtss_phy_mac_fc_buffer_event_poll_private(vtss_state_t *vtss_state,
+                                                         const vtss_port_no_t port_no,
+                                                         vtss_phy_10g_extnd2_event_t *const ex2_events)
+{
+    u32   pending;
+
+    VTSS_D("vtss_phy_mac_fc_buffer_event_poll_private port_no: %u\n", port_no);
+    CSR_RD(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY, &pending);
+    CSR_WR(port_no, VTSS_MAC_FC_BUFFER_STATUS_STICKY, pending);
+
+    // *ex2_events = 0;
+    if (pending & 0x1) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_XOFF_PAUSE_GEN_STICKY_MASK);
+    }
+    if (pending & 0x2) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_XON_PAUSE_GEN_STICKY_MASK);
+    }
+    if (pending & 0x4) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_UNCORRECTED_FRM_DROP_STICKY_MASK);
+    }
+    if (pending & 0x8) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_UNCORRECTED_FRM_DROP_STICKY_MASK);
+    }
+    if (pending & 0x10000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_CTRL_QUEUE_OVERFLOW_DROP_STICKY_MASK);
+    }
+    if (pending & 0x20000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_CTRL_QUEUE_UNDERFLOW_DROP_STICKY_MASK);
+    }
+    if (pending & 0x40000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_DATA_QUEUE_OVERFLOW_DROP_STICKY_MASK);
+    }
+    if (pending & 0x80000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_TX_DATA_QUEUE_UNDERFLOW_DROP_STICKY_MASK);
+    }
+    if (pending & 0x100000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_OVERFLOW_DROP_STICKY_MASK);
+    }
+    if (pending & 0x200000) {
+        *ex2_events |= ((u64)1 << VTSS_MAC_FC_BUFFER_STATUS_MASK_RX_UNDERFLOW_DROP_STICKY_MASK);
+    }
+    return (VTSS_RC_OK);
+}
+
+static vtss_rc vtss_phy_10g_fifo_event_poll_private(vtss_state_t *vtss_state,
+                                                    const vtss_port_no_t port_no,
+                                                    vtss_phy_10g_extnd2_event_t *const ex2_events)
+{
+    u32   pending;
+    CSR_RD(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_STAT, &pending);
+    CSR_WR(port_no, VTSS_FIFO_BIST_RATE_COMP_FIFO_STAT_RATE_COMP_FIFO_STAT, pending);
+
+    // *ex2_events = 0;
+    if (pending & 0x1) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_TX_FIFO_UNDERFLOW_EV);
+    }
+    if (pending & 0x2) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_TX_FIFO_OVERFLOW_EV);
+    }
+    if (pending & 0x4) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_RX_FIFO_UNDERFLOW_EV);
+    }
+    if (pending & 0x8) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_RX_FIFO_OVERFLOW_EV);
+    }
+    if (pending & 0x10) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_TX_FIFO2_UNDERFLOW_EV);
+    }
+    if (pending & 0x20) {
+        *ex2_events |= ((u64)1 << VTSS_PHY_10G_TX_FIFO2_OVERFLOW_EV);
+    }
+    return (VTSS_RC_OK);
+}
 
 static vtss_rc vtss_phy_10g_extended_event_poll_private(vtss_state_t *vtss_state,
                                                 const vtss_port_no_t port_no,
@@ -13372,7 +13854,7 @@ static vtss_rc vtss_phy_10g_extended_event_poll_private(vtss_state_t *vtss_state
     CSR_WR(port_no,VTSS_HOST_PMA_PMA_INTR_PMA_INTR_STAT, pending2);
     pending2 &= mask;
 
-    *ex_events = 0;
+    //*ex_events = 0;
     if (pending1 & 0x0001) {
         *ex_events |= VTSS_PHY_10G_RX_CHAR_DEC_CNT_THRESH_EV;
     }
@@ -13413,15 +13895,17 @@ static vtss_rc vtss_phy_10g_extended_event_poll_private(vtss_state_t *vtss_state
         *ex_events |= VTSS_PHY_10G_TX_LOL_EV;
     }
     return VTSS_RC_OK;
-}                         
-static vtss_rc malibu_phy_10g_extended_event_poll(vtss_state_t               *vtss_state,
-                                         const vtss_port_no_t        port_no,
+}
+
+static vtss_rc malibu_phy_10g_extended_event_poll(vtss_state_t             *vtss_state,
+                                         const vtss_port_no_t               port_no,
                                          vtss_phy_10g_extnd_event_t  *const ex_events )
 {
     u8 aggr_int;
     u32 aggr_int_chip[4], channel_int_1, channel_int_0;
     u32 aggr_int_1, aggr_int_2, aggr_int_3, aggr_int_4;
-    
+
+    VTSS_D("malibu_phy_10g_extended_event_poll %u\n", port_no);
     /*Read all the aggr_int[i], currently  malibu interrupts supported at aggr_intr[0]*/
     VTSS_D("Enter %s\n",__func__);
     memset (aggr_int_chip, 0, sizeof(aggr_int_chip));
@@ -13429,46 +13913,130 @@ static vtss_rc malibu_phy_10g_extended_event_poll(vtss_state_t               *vt
     {
         CSR_RD(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_STAT(aggr_int), &aggr_int_chip[aggr_int]);
     }
+    /* There are 4 Aggegated Interrupts: Each one has INTR[0] and INTR[1]  */
     aggr_int_1 = aggr_int_chip[0];
     aggr_int_2 = aggr_int_chip[1];
     aggr_int_3 = aggr_int_chip[2];
     aggr_int_4 = aggr_int_chip[3];
-           /* interrupt on CH0_INTR1_STAT/CH1_INTR1_STAT/CH2_INTR1_STAT/CH0_INTR1_STAT */
+
+
+    /* Init/Clear the Events to be returned  */
+    *ex_events = 0;
+
+    /* Interrupt on CH0_INTR1_STAT/CH1_INTR1_STAT/CH2_INTR1_STAT/CH3_INTR1_STAT */
+    /* Check CH0_INTR1_STAT */
     if ((aggr_int_1 & 0x2) || (aggr_int_1 & 0x8) || (aggr_int_1 & 0x20) || (aggr_int_1 & 0x80)) {
-            /*interrupt on LinePCS10g/HostPMA*/
+        /* Check for Interrupt on LinePCS10g/HostPMA/HMAC/LMAC */
+        /* Read the 2 Interrupt Generators to get INTR[0] and INTR[1] */
         CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(1), &channel_int_1);
         CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(0), &channel_int_0);
-              /*read status at intr0*/
-            if ((channel_int_1 & 0x8000) || (channel_int_1 & 0x4)) {
-                if (vtss_phy_10g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
-                    VTSS_E("failed to poll extended event\n");
-                    return VTSS_RC_ERROR;
-                }
-            } else if ((channel_int_1 & 0x10) || (channel_int_1 & 0x20) || (channel_int_0 & 0x10) || (channel_int_0 & 0x20)) {
-                if (vtss_phy_1g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
-                    VTSS_E("failed to poll 1G extended event\n");
-                    return VTSS_RC_ERROR;
-                }
-            } else {
-                *ex_events = 0;
-                VTSS_I("Only LinePCS10g and HostPMA interrupts supported for extended events\n");
-            }
-    } else if ((aggr_int_2 != 0) || (aggr_int_3 != 0) || (aggr_int_4 != 0)) {
+        printf("malibu_phy_10g_extended_event_poll: AGGR_INT_0: INTR_STAT[0]: 0x%08x,  INTR_STAT[1]: 0x%08x\n", channel_int_0, channel_int_1);
+        /*  Read status at INTR[1]  */
+        /*  Check INTR[1] Status for: HPMA(15), HMAC(9), LMAC(8), LPCS10G(2)  */
+        /*  NOTE: INTR[1] Status for: HMAC(9), LMAC(8)  are read from STICKY Bits which do not propogate  */
+        //if ((channel_int_1 & 0x8000) || (channel_int_1 & 0x4) || (channel_int_1 & 0x200) || (channel_int_1 & 0x100)) {
+             if (vtss_phy_10g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
+                 VTSS_E("failed to poll extended event\n");
+                 return VTSS_RC_ERROR;
+             }
+        //}
+        /*  Check BOTH INTR[0] and INTR[1] Status for: HPCS1G(5), LPCS1G(4) - However ALL PCS1G is read from STICKY Bits  */
+        /* That means Process HPCS1G(5), LPCS1G(4) unconditionally because the Blk Level propogation does not exist */
+        //if ((channel_int_1 & 0x10) || (channel_int_1 & 0x20) || (channel_int_0 & 0x10) || (channel_int_0 & 0x20)) {
+             if (vtss_phy_1g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
+                 VTSS_E("failed to poll 1G extended event\n");
+                 return VTSS_RC_ERROR;
+             }
+        //}
+    } else if ((aggr_int_2 != 0) || (aggr_int_3 != 0) || (aggr_int_4 != 0)) { /* Check CH1_INTR1_STAT/CH2_INTR1_STAT/CH3_INTR1_STAT */
         CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(1), &channel_int_1);
         CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(0), &channel_int_0);
-            if ((channel_int_1 & 0x10) || (channel_int_1 & 0x20) || (channel_int_0 & 0x10) || (channel_int_0 & 0x20)) {
-                if (vtss_phy_1g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
-                    VTSS_E("failed to poll 1G extended event\n");
-                    return VTSS_RC_ERROR;
-                }
-            } 
-        VTSS_I("Warning: Currently interrutps supported on aggr_intr[0]\n");
-        *ex_events = 0;
+        printf("malibu_phy_10g_extended_event_poll: EXT_AGGR_INT_123: INTR_STAT[0]: 0x%08x,  INTR_STAT[1]: 0x%08x\n", channel_int_0, channel_int_1);
+
+        /*  Check BOTH INTR[0] and INTR[1] Status for: HPCS1G(5), LPCS1G(4) - However ALL PCS1G Status is read from STICKY Bits  */
+        /* That means Process HPCS1G(5), LPCS1G(4) unconditionally because the Blk Level propogation does not exist */
+        //if ((channel_int_1 & 0x10) || (channel_int_1 & 0x20) || (channel_int_0 & 0x10) || (channel_int_0 & 0x20)) {
+             if (vtss_phy_1g_extended_event_poll_private(vtss_state, port_no, ex_events) != VTSS_RC_OK) {
+                VTSS_E("failed to poll 1G extended event\n");
+                return VTSS_RC_ERROR;
+             }
+        //}
+        VTSS_I("Warning: aggr_intr[1/2/3] Selected! Only HPCS1G and LPCS1G Blks Processed, ALL others INTR supported/processed on aggr_intr[0]\n");
     } else {
-        *ex_events = 0;
         VTSS_I("No Events detected\n");
     }
     return VTSS_RC_OK;
+}
+
+static vtss_rc malibu_phy_10g_extended2_event_poll(vtss_state_t                      *vtss_state,
+                                                   const vtss_port_no_t               port_no,
+                                                   vtss_phy_10g_extnd2_event_t *const ex2_events)
+{
+    u32 value = 0;
+    u8 aggr_int;
+    u32 aggr_int_chip[4], channel_int_0, channel_int_1;
+    u32 aggr_int_1;
+
+    VTSS_D("malibu_phy_10g_extended2_event_poll %u\n", port_no);
+    /*Read all the aggr_int[i], currently API only supports Malibu interrupts at aggr_intr[0]*/
+    VTSS_D("Enter %s\n",__func__);
+    memset (aggr_int_chip, 0, sizeof(aggr_int_chip));
+    for (aggr_int = 0; aggr_int < 4; aggr_int++)
+    {
+        CSR_RD(port_no, VTSS_GPIO_CTRL_INTR_CFG_STAT_INTR_STAT(aggr_int), &aggr_int_chip[aggr_int]);
+    }
+    /* There are 4 Aggegated Interrupts: Each one has INTR[0] and INTR[1]  */
+    aggr_int_1 = aggr_int_chip[0];
+
+    /* Init/Clear the Events to be returned  */
+    *ex2_events = 0;
+
+    /* Interrupt on CH0_INTR1_STAT/CH1_INTR1_STAT/CH2_INTR1_STAT/CH3_INTR1_STAT */
+    /* The issue with these Events is that many are from STICKY_BITS that DO Not result in an INTR */
+    /* Check CH0_INTR1_STAT */
+    if ((aggr_int_1 & 0x2) || (aggr_int_1 & 0x8) || (aggr_int_1 & 0x20) || (aggr_int_1 & 0x80) || (aggr_int_1 & 0x100000)) {
+        /* interrupt on HostPCS10g/LinePMA */
+        CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(1), &channel_int_1);
+        CSR_RD(port_no, VTSS_GPIO_INTR_CTRL_GPIO_INTR_INTR_STAT(0), &channel_int_0);
+        VTSS_I("malibu_phy_10g_extended2_event_poll: AGGR_INT_0: INTR_STAT[0]: 0x%08x,  INTR_STAT[1]: 0x%08x\n", channel_int_0, channel_int_1);
+        /*read status at INTR[1] */
+        /* LINE PMA(14), HPCS1G(5), LPCS1G(4), HPCS10G(3)  */
+        /* The LINE PMA(14) & HPCS10G(3) Block Event Indicators work, ie. are HW INTR but the HPCS1G and LPCS1G Blk Level Event Indicators are  */
+        /*    SW INTR as they are determined from STICKY Bits and do not */
+        /* That means Process HPCS1G(5), LPCS1G(4) unconditionally because the Blk Level propogation does not exist */
+        //if ((channel_int_1 & 0x4000) || (channel_int_1 & 0x8) || (channel_int_1 & 0x10) || (channel_int_1 & 0x20)) {
+            /* LINE PMA(14), HPCS10G(3)  */
+            if (vtss_phy_10g_extended2_event_poll_private(vtss_state, port_no, ex2_events) != VTSS_RC_OK) {
+               VTSS_E("failed to poll extended event\n");
+                return VTSS_RC_ERROR;
+            }
+        //}
+        /* HEGR_FIFO(13), LEGR_FIFO(12), LINGR_FIFO(11)  */
+        //if ((channel_int_1 & 0x1000) || (channel_int_1 & 0x2000) || (channel_int_1 & 0x800)) {
+            if (vtss_phy_10g_fifo_event_poll_private(vtss_state, port_no, ex2_events) != VTSS_RC_OK) {
+                VTSS_E("failed to poll fifo event\n");
+                return VTSS_RC_ERROR;
+            }
+        //}
+        /* FC_BUFF(10) */
+        /* Software INTR - STICKY Bit Status */
+        //if (channel_int_1 & 0x400) {
+            if (vtss_phy_mac_fc_buffer_event_poll_private(vtss_state, port_no, ex2_events) != VTSS_RC_OK) {
+                VTSS_E("failed to poll mac fc buffer event\n");
+                return VTSS_RC_ERROR;
+            }
+        //}
+        /* GPIO_INTR(15) - Interrupt Propogation */
+        if (aggr_int_1 & 0x100000) {
+             CSR_RD(port_no, VTSS_HOST_PMA_APC_SDET_SEL_APC_SDET_SEL, &value);
+             if (value & VTSS_F_HOST_PMA_APC_SDET_SEL_APC_SDET_SEL_LOPC_STAT) {
+                 *ex2_events |= ((u64)1 << VTSS_PHY_10G_HOST_LOPC_EV);
+             }
+        }
+    } else {
+         VTSS_I("No Events detected\n");
+     }
+     return VTSS_RC_OK;
 }
 
 static void malibu_deb_pr_reg(vtss_state_t *vtss_state, const vtss_debug_printf_t pr, vtss_port_no_t port_no,
@@ -17596,6 +18164,7 @@ vtss_rc vtss_phy_10g_inst_malibu_create(vtss_state_t *vtss_state)
     func->malibu_phy_10g_power_set    = malibu_phy_10g_power_set;
     func->malibu_phy_10g_event_poll = malibu_phy_10g_event_poll;
     func->malibu_phy_10g_extended_event_poll = malibu_phy_10g_extended_event_poll;
+    func->malibu_phy_10g_extended2_event_poll = malibu_phy_10g_extended2_event_poll;
     func->malibu_phy_10g_pcs_status_get = malibu_phy_10g_pcs_status_get;
     func->malibu_phy_10g_host_recvrd_clk_set = malibu_phy_10g_host_recvrd_clk_set;
     func->malibu_phy_10g_line_clk_set = malibu_phy_10g_line_clk_set;

@@ -31,6 +31,11 @@ typedef uint8_t            BOOL; /**< Boolean implemented as 8-bit unsigned */
 #define FALSE 0 /**< False boolean value */
 #endif
 
+/* ID when we read PHY ID registers */
+#define VTSS_PHY_VIPER_ID 0x707C
+#define VTSS_PHY_MALIBU10G_8258_ID 0x8258
+#define VTSS_PHY_MALIBU10G_8254_ID 0x8254
+
 /** \brief Error code type */
 typedef int vtss_rc;
 
@@ -154,6 +159,7 @@ typedef mepa_mac_t vtss_mac_t;
 typedef u8 vtss_mac_addr_t[VTSS_MAC_ADDR_SZ_BYTES]; /**< MAC address (SMAC/DMAC) */
 
 #define MAC_ADDR_BROADCAST {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}  /**< Broadcast address used for addr in the vtss_mac_t struct */
+#define MAC_ADDR_ZERO {0x00, 0x00, 0x00, 0x00, 0x00, 0x00} /**< Port MAC address can't be zero */
 
 /** \brief Ethernet Type **/
 typedef mepa_etype_t vtss_etype_t;
@@ -184,7 +190,7 @@ typedef enum
     VTSS_PORT_INTERFACE_SPI4,          /**< SPI4 */
     VTSS_PORT_INTERFACE_QSGMII,        /**< QSGMII */
     VTSS_PORT_INTERFACE_SFI,           /**< SFI/LAN, 5G-25G, 64B/66B PCS */
-    VTSS_PORT_INTERFACE_SXGMII,        /**< 1x10G or 1x5G device.    Uses primary device. 64B/66B PCS. Experimental unsupported mode!  */
+    VTSS_PORT_INTERFACE_USXGMII,       /**< 1x10G.  Uses primary device. 64B/66B PCS. Laguna only  */
     VTSS_PORT_INTERFACE_USGMII,        /**< 8x2G5 devices. Mode 'X'. Uses 2G5 device. Experimental unsupported mode!  */
     VTSS_PORT_INTERFACE_QXGMII,        /**< 4x2G5 devices. Mode 'R'. Uses 2G5 device.    */
     VTSS_PORT_INTERFACE_DXGMII_5G,     /**< 2x2G5 devices. Mode 'F'. Uses 2G5 device. Experimental unsupported mode!  */
@@ -315,6 +321,9 @@ vtss_rc vtss_phy_inst_create(const mepa_callout_t    *callout,
 vtss_rc vtss_phy_inst_destroy(const mepa_callout_t    *callout,
                               struct mepa_callout_ctx *callout_ctx,
                               const vtss_inst_t inst);
+
+uint32_t mepa_phy_id_get(const mepa_callout_t    MEPA_SHARED_PTR *callout,
+                         struct mepa_callout_ctx MEPA_SHARED_PTR *callout_ctx);
 
 /** \brief Debug layer */
 /* Debug layer */
@@ -553,6 +562,7 @@ typedef enum
 {
     VTSS_PHY_TRACE_GROUP_DEFAULT,       /**< Default trace group */
     VTSS_PHY_TRACE_GROUP_TS,            /**< Timestamping */
+    VTSS_PHY_TRACE_GROUP_MACSEC,        /**< MACsec */
 
     VTSS_PHY_TRACE_GROUP_COUNT          /**< Number of trace groups */
 } vtss_phy_trace_group_t;

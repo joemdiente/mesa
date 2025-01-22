@@ -277,22 +277,41 @@ static vtss_rc vtss_phy_i2c_wait_for_ready(vtss_state_t *vtss_state, vtss_port_n
     return VTSS_RC_OK;
 }
 
+// Function for Setting the I2C clock select
+// In: port_no - The PHY port number from 0, clock value - 0,1,2,3 for selecting the Clock frequency ranging 100 Khz to 4 Mhz
+static vtss_rc vtss_phy_i2c_clock_sel_private(vtss_state_t *vtss_state, vtss_port_no_t port_no, const mepa_i2c_clk_select_t *clk_value)
+{
+    u16 reg_value;
+    VTSS_RC(vtss_phy_page_gpio(vtss_state, port_no));
+
+    VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1, &reg_value));
+
+    reg_value = ((reg_value & 0xffcf) | *clk_value<<4);
+
+    /* Fix for Jira MEPA-231 I2C clock is selectable based on register 20G */
+    VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1, reg_value));
+
+    return VTSS_RC_OK;
+}
+
 // Function for doing phy i2c reads
 // In: port_no - The PHY port number starting from 0.
-static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t port_no, u8 i2c_mux, u8 i2c_reg_start_addr, u8 i2c_device_addr, u8 *value, u8 cnt, BOOL word_access)
+static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t port_no, u8 i2c_mux, u8 i2c_reg_start_addr, u8 i2c_device_addr, BOOL word_access, u8 cnt, const u8 *value)
 {
     u16 i, count = (cnt == 0 ? 256 : cnt);
-    u32 reg_val;
+    u32 reg_val = 0;
+    u16 reg_value = 0;
+
     VTSS_I("i2c_mux = %d, i2c_reg_start_addr = 0x%X, i2c_device_addr =0x%X", i2c_mux, i2c_reg_start_addr, i2c_device_addr);
 
     VTSS_RC(vtss_phy_i2c_wait_for_ready(vtss_state, port_no));
 
     VTSS_RC(vtss_phy_page_gpio(vtss_state, port_no));
 
-
+    VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1, &reg_value));
 
     reg_val = VTSS_F_PHY_I2C_MUX_CONTROL_1_DEV_ADDR(i2c_device_addr) |
-              VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ(1) |
+              VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ((0x30 &(reg_value))>>4) |
               (i2c_mux == 3 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_3_ENABLE : 0) |
               (i2c_mux == 2 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_2_ENABLE : 0) |
               (i2c_mux == 1 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_1_ENABLE : 0) |
@@ -302,7 +321,7 @@ static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t 
 
     VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1,
                         VTSS_F_PHY_I2C_MUX_CONTROL_1_DEV_ADDR(i2c_device_addr) |
-                        VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ(1) |
+                        VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ((0x30 &(reg_value))>>4) |
                         (i2c_mux == 3 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_3_ENABLE : 0) |
                         (i2c_mux == 2 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_2_ENABLE : 0) |
                         (i2c_mux == 1 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_1_ENABLE : 0) |
@@ -319,6 +338,8 @@ static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t 
         // setup data to be written
         VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_DATA_READ_WRITE, value[i]));
 
+        VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_DATA_READ_WRITE, &reg_value));
+
         // Execute the write
         VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_2,
                             VTSS_F_PHY_I2C_MUX_CONTROL_2_MUX_READY |
@@ -326,6 +347,7 @@ static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t 
                             VTSS_F_PHY_I2C_MUX_CONTROL_2_ENA_I2C_MUX_ACCESS |
                             VTSS_F_PHY_I2C_MUX_CONTROL_2_ADDR(i2c_reg_addr)));
 
+        VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_2, &reg_value));
         VTSS_D("i2c_reg_start_addr:%d, i2c_reg_addr:%d", i2c_reg_start_addr, i2c_reg_addr);
         VTSS_RC(vtss_phy_i2c_wait_for_ready(vtss_state, port_no));
     }
@@ -336,11 +358,12 @@ static vtss_rc vtss_phy_i2c_wr_private(vtss_state_t *vtss_state, vtss_port_no_t 
 
 // Function for doing phy i2c writes
 // In: port_no - The PHY port number starting from 0.
-static vtss_rc vtss_phy_i2c_rd_private(vtss_state_t *vtss_state, vtss_port_no_t port_no, u8 i2c_mux, u8 i2c_reg_start_addr, u8 i2c_device_addr, u8 *value, u8 cnt, BOOL word_access)
+static vtss_rc vtss_phy_i2c_rd_private(vtss_state_t *vtss_state, vtss_port_no_t port_no, u8 i2c_mux, u8 i2c_reg_start_addr, u8 i2c_device_addr, BOOL word_access, u8 cnt, u8 *value)
 {
 
-    u32 reg_val32;
-    u16 reg_val16;
+    u32 reg_val32 = 0;
+    u16 reg_val16 = 0;
+    u16 reg_value = 0;
     u16 i, count = (cnt == 0 ? 256 : cnt);
 
     VTSS_N("i2c_mux = %d, i2c_reg_start_addr = 0x%X, i2c_device_addr =0x%X", i2c_mux, i2c_reg_start_addr, i2c_device_addr);
@@ -349,8 +372,10 @@ static vtss_rc vtss_phy_i2c_rd_private(vtss_state_t *vtss_state, vtss_port_no_t 
 
     VTSS_RC(vtss_phy_page_gpio(vtss_state, port_no));
 
+    VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1, &reg_value));
+
     reg_val32 = VTSS_F_PHY_I2C_MUX_CONTROL_1_DEV_ADDR(i2c_device_addr) |
-                VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ(1) |
+                VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ((0x30 &(reg_value))>>4) |
                 (i2c_mux == 3 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_3_ENABLE : 0) |
                 (i2c_mux == 2 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_2_ENABLE : 0) |
                 (i2c_mux == 1 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_1_ENABLE : 0) |
@@ -360,7 +385,7 @@ static vtss_rc vtss_phy_i2c_rd_private(vtss_state_t *vtss_state, vtss_port_no_t 
 
     VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_I2C_MUX_CONTROL_1,
                         VTSS_F_PHY_I2C_MUX_CONTROL_1_DEV_ADDR(i2c_device_addr) |
-                        VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ(1) |
+                        VTSS_F_PHY_I2C_MUX_CONTROL_1_SCL_CLK_FREQ((0x30 &(reg_value))>>4) |
                         (i2c_mux == 3 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_3_ENABLE : 0) |
                         (i2c_mux == 2 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_2_ENABLE : 0) |
                         (i2c_mux == 1 ? VTSS_F_PHY_I2C_MUX_CONTROL_1_PORT_1_ENABLE : 0) |
@@ -806,6 +831,8 @@ static vtss_rc vtss_phy_100BaseT_long_linkup_workaround(vtss_state_t *vtss_state
     u16                   tr_reg18 = 0;
     u16                   reg0val = 0;
     u16                   reg4val = 0;
+    u16                   reg5val = 0;
+    u16                   reg6val = 0;
     u16                   reg9val = 0;
     u16                   retryCnt100 = 0;
     u16                   speed_sel = 0;
@@ -872,14 +899,39 @@ static vtss_rc vtss_phy_100BaseT_long_linkup_workaround(vtss_state_t *vtss_state
                 }
             } else { /* ANEG ENABLED */
                 par_det100_ena = reg4val & (0x1 << 7) ? TRUE:FALSE; // 100 HDX is Advertised, therefore PD Enabled for 100M
-                if (par_det100_ena) {
+                VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_AUTONEGOTIATION_LINK_PARTNER_ABILITY, &reg5val));
+                VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_AUTONEGOTIATION_EXPANSION, &reg6val));
+                VTSS_I("ANEG Mode: par_det100_ena:0x%x,  Reg4Val: 0x%04x, Cu Media, Speed=100M, retryCnt100: %d, Reg05:0x%04x, Reg06:0x%04x", par_det100_ena, reg4val,                                         retryCnt100, reg5val, reg6val);
+
+		if (par_det100_ena) {
+                /* retryCnt100 only increments if ANEG has completed and the link has transitioned to involve the PCS */
                     if (retryCnt100 >= VTSS_FORCED_LONG_LINKUP_COUNTER_WINDOW) {
                         VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
                         VTSS_RC(VTSS_PHY_WARM_WR_MASKED(vtss_state, port_no, VTSS_PHY_MODE_CONTROL,
                                    VTSS_F_PHY_MODE_CONTROL_AUTO_NEG_ENA | VTSS_F_PHY_MODE_CONTROL_RESTART_AUTO_NEG,
                                    VTSS_F_PHY_MODE_CONTROL_AUTO_NEG_ENA | VTSS_F_PHY_MODE_CONTROL_RESTART_AUTO_NEG)); // Restart ANEG
-                    }
+                        VTSS_I("ANEG Mode - ANEG RESTART - Cu Media, Speed=100M, reg4val:0x%04x, retryCnt100: %d, Reg05:0x%04x, Reg06:0x%04x", reg4val, retryCnt100, reg5val                                   , reg6val);
+		    }
                 }
+
+                /* retryCnt100 only increments if ANEG has completed and the link has transitioned to involve the PCS */
+                /* In some cases, If ANEG has not completed successfully, a problem can arise where the link will not come up */
+                /* The Signature of this event is that Link Partner Params have been received and Expansion Page has been     */
+                /* Received, However there is an indication that the Link Partner is not ANEG Capable                         */
+                /* In this case, ANEG needs to be restarted.                                                                  */
+                /* If retryCnt100 is greater than 3, ANEG would have completed successfully                                   */
+                if (((retryCnt100 > 0) && (reg5val > 0) &&
+                     (reg6val & (VTSS_PHY_AUTONEGOTIATION_EXPANSION_LOCAL_PHY_NXT_PG_CAPABLE |
+                                 VTSS_PHY_AUTONEGOTIATION_EXPANSION_PAGE_RECEIVED)) &&
+                     !(reg6val & VTSS_PHY_AUTONEGOTIATION_EXPANSION_PAGE_LP_ANEG_CAPABLE)))  {
+
+                        VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
+                        VTSS_RC(VTSS_PHY_WARM_WR_MASKED(vtss_state, port_no, VTSS_PHY_MODE_CONTROL,
+                                   VTSS_F_PHY_MODE_CONTROL_AUTO_NEG_ENA | VTSS_F_PHY_MODE_CONTROL_RESTART_AUTO_NEG,
+                                   VTSS_F_PHY_MODE_CONTROL_AUTO_NEG_ENA | VTSS_F_PHY_MODE_CONTROL_RESTART_AUTO_NEG)); // Restart ANEG
+                        VTSS_I("ANEG Mode - ANEG RESTART - Cu Media, Speed=100M, reg4val:0x%04x, retryCnt100: %d, Reg05:0x%04x, Reg06:0x%04x", reg4val, retryCnt100, reg5val                                   , reg6val);
+                    }
+
             } /* End of ANEG */
         }
             VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
@@ -9023,6 +9075,11 @@ static vtss_rc vtss_phy_conf_set_private(vtss_state_t *vtss_state,
                 /* If clearing bit is desired, Clear the bit in the Register either before or after this Write */
                 if (!vtss_state->sync_calling_private) {
                     VTSS_RC(VTSS_PHY_WARM_WR_MASKED(vtss_state, port_no, VTSS_PHY_MEDIA_SERDES_PCS_CONTROL, 0xFFFF, new_reg_value));
+                    // This is setting the ANEG Advertisements for 1000BaseX mode of Operation for Fiber and CU SFP media interface.
+                    if ((conf->mode == VTSS_PHY_MODE_ANEG) && ((reset_conf->media_if == VTSS_PHY_MEDIA_IF_FI_1000BX) || (reset_conf->media_if == VTSS_PHY_MEDIA_IF_AMS_FI_1000BX) || (reset_conf->media_if == VTSS_PHY_MEDIA_IF_AMS_CU_1000BX))) {
+                        VTSS_RC(vtss_phy_page_ext3(vtss_state, port_no));
+                        VTSS_RC(PHY_WR_PAGE(vtss_state, port_no, VTSS_PHY_MEDIA_SERDES_CL37_ADV_ABILITY, 0x0020));
+                    }
                 }
 
                 VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
@@ -9773,7 +9830,7 @@ vtss_rc vtss_phy_status_get_private(vtss_state_t *vtss_state,
                                     vtss_port_status_t   *const status)
 {
     vtss_phy_port_state_t *ps = &vtss_state->phy_state[port_no];
-    u16                   reg, reg10;
+    u16                   reg, reg10, reg17, reg24;
     u16                   revision;
     vtss_phy_reset_conf_t *conf = &ps->reset;
     revision = ps->type.revision;
@@ -9783,18 +9840,51 @@ vtss_rc vtss_phy_status_get_private(vtss_state_t *vtss_state,
 
         /* Read link status from register 1 */
         VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MODE_STATUS, &reg));
-        /* Set Link Down Indication based on latched in link_status in Reg01 */
-        status->link_down = (reg & (1 << 2) ? 0 : 1);
+
+        /* Read link status on host side of the phy from register 17E3 */
+        VTSS_RC(vtss_phy_page_ext3(vtss_state, port_no));
+        VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MAC_SERDES_PCS_STATUS, &reg17));
+         /* Read link status on Media side of the phy from register 24E3 */
+        VTSS_RC(vtss_phy_page_ext3(vtss_state, port_no));
+        VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MEDIA_SERDES_PCS_STATUS, &reg24));
 
         //VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_1000BASE_T_CONTROL, &reg10));
         /* Populates the Local PHY Status from Reg01 and Reg09 */
         vtss_phy_decode_status_reg(port_no, reg, status);
 
+        if((ps->family == VTSS_PHY_FAMILY_VIPER) || (ps->family == VTSS_PHY_FAMILY_TESLA)) {
+            if((conf->mac_if == VTSS_PORT_INTERFACE_QSGMII) || (conf->mac_if == VTSS_PORT_INTERFACE_SGMII)) {
+        /* Set Link Down Indication based on latched in link_status in Reg01, Reg17 and Reg24*/
+                status->link_down = (((reg & (1 << 2)) | (reg24 & (1 << 2))) & (reg17 & (1 << 2)) ? 0 : 1);
+	    }
+        }
+
+        VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
+
         if (status->link_down) {
             /* Read status again if link down (latch low field) */
             VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MODE_STATUS, &reg));
-            status->link = (reg & (1 << 2) ? 1 : 0);
+
+            VTSS_RC(vtss_phy_page_ext3(vtss_state, port_no));
+            VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MAC_SERDES_PCS_STATUS, &reg17));
+
+            VTSS_RC(vtss_phy_page_ext3(vtss_state, port_no));
+            VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_MEDIA_SERDES_PCS_STATUS, &reg24));
+
+            /* Checks Family ,MAC interface and updates the link status based on Reg 01, Reg 24E3, Reg 17E3 */
+            switch(ps->family) {
+                case VTSS_PHY_FAMILY_VIPER:
+                case VTSS_PHY_FAMILY_TESLA:
+                    if((conf->mac_if == VTSS_PORT_INTERFACE_QSGMII) || (conf->mac_if == VTSS_PORT_INTERFACE_SGMII)) {
+                        status->link = (((reg & (1 << 2)) | (reg24 & (1<<2))) & (reg17 & (1<<2)) ? 1 : 0);
+                    }
+                    break;
+                default:
+                    status->link = ((reg & (1 << 2)) ? 1 : 0);
+            }
             VTSS_N("status->link = %d, port = %d, reg = 0x%X", status->link, port_no, reg);
+
+            VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
         } else {
             status->link = 1;
         }
@@ -9865,6 +9955,7 @@ vtss_rc vtss_phy_status_get_private(vtss_state_t *vtss_state,
                 }
                 break;
             case VTSS_PHY_MODE_FORCED:
+                VTSS_RC(vtss_phy_page_std(vtss_state, port_no));
                 VTSS_RC(PHY_RD_PAGE(vtss_state, port_no, VTSS_PHY_AUXILIARY_CONTROL_AND_STATUS, &reg));
                 status->mdi_cross = ((reg & VTSS_F_PHY_AUXILIARY_CONTROL_AND_STATUS_HP_AUTO_MDIX_CROSSOVER_INDICATION) ? TRUE : FALSE);
 
@@ -10077,12 +10168,14 @@ vtss_rc vtss_phy_status_get_private(vtss_state_t *vtss_state,
             default:
                 break;
             }
-
+	}
+       if(!status->link || status->link_down) {
             /* Bz#23788 Work-Around for 100BT Link break Issue, after restoring link it does not come up for a long time. */
             /* This only currently applies to Families VIPER and NANO */
             switch (ps->family) {
                 case VTSS_PHY_FAMILY_TESLA:
                     if (ps->type.revision >= VTSS_PHY_TESLA_REV_E) {
+                        VTSS_I("Tesla Family > Rev E");
                         VTSS_RC(vtss_phy_100BaseT_long_linkup_workaround(vtss_state, port_no, TRUE));
                     }
                     break;
@@ -10093,7 +10186,7 @@ vtss_rc vtss_phy_status_get_private(vtss_state_t *vtss_state,
                     break;
                 default:
                     break;
-            }
+	    }
         }
 
         /* Handle link up event */
@@ -12998,16 +13091,16 @@ vtss_rc vtss_phy_i2c_read(const vtss_inst_t    inst,
                           const u8             i2c_mux,
                           const u8             i2c_reg_start_addr,
                           const u8             i2c_device_addr,
-                          u8                   *const value,
+                          BOOL                 word_access,
                           u8                   cnt,
-                          BOOL                 word_access)
+                          u8                   *const value)
 {
     vtss_state_t *vtss_state;
     vtss_rc      rc;
 
     VTSS_ENTER();
     if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
-        rc = vtss_phy_i2c_rd_private(vtss_state, port_no, i2c_mux, i2c_reg_start_addr, i2c_device_addr, value, cnt, word_access);
+        rc = vtss_phy_i2c_rd_private(vtss_state, port_no, i2c_mux, i2c_reg_start_addr, i2c_device_addr, word_access, cnt, value);
     }
     VTSS_EXIT();
     return rc;
@@ -13020,16 +13113,33 @@ vtss_rc vtss_phy_i2c_write(const vtss_inst_t    inst,
                            const u8             i2c_mux,
                            const u8             i2c_reg_start_addr,
                            const u8             i2c_device_addr,
-                           u8                   *value,
+                           BOOL                 word_access,
                            u8                   cnt,
-                           BOOL                 word_access)
+                           const u8            *value)
 {
     vtss_state_t *vtss_state;
     vtss_rc      rc;
 
     VTSS_ENTER();
     if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
-        rc = vtss_phy_i2c_wr_private(vtss_state, port_no, i2c_mux, i2c_reg_start_addr, i2c_device_addr, value, cnt, word_access);
+        rc = vtss_phy_i2c_wr_private(vtss_state, port_no, i2c_mux, i2c_reg_start_addr, i2c_device_addr, word_access, cnt, value);
+    }
+    VTSS_EXIT();
+    return rc;
+}
+
+
+/* I2C Clock frequency select */
+vtss_rc vtss_phy_i2c_clock_select(const vtss_inst_t    inst,
+                                 const vtss_port_no_t port_no,
+                                 const mepa_i2c_clk_select_t  *clk_value)
+{
+    vtss_state_t *vtss_state;
+    vtss_rc      rc;
+
+    VTSS_ENTER();
+    if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
+        rc = vtss_phy_i2c_clock_sel_private(vtss_state, port_no, clk_value);
     }
     VTSS_EXIT();
     return rc;

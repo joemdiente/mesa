@@ -181,6 +181,7 @@ typedef enum {
     VTSS_DEBUG_GROUP_ERPS,      /**< ERPS */
     VTSS_DEBUG_GROUP_EPS,       /**< EPS */
     VTSS_DEBUG_GROUP_SR,        /**< Seamless Redundancy */
+    VTSS_DEBUG_GROUP_REDBOX,    /**< RedBox */
     VTSS_DEBUG_GROUP_PACKET,    /**< Packet control */
     VTSS_DEBUG_GROUP_FDMA,      /**< Obsoleted */
     VTSS_DEBUG_GROUP_TS,        /**< TS: TimeStamping */
@@ -419,6 +420,8 @@ typedef enum {
     VTSS_PTP_PIN_1_SYNC_EV =(1 << 6), /*< PTP External pin 1 synchronization (Jaguar2 only)*/
     VTSS_PTP_PIN_2_SYNC_EV =(1 << 7), /*< PTP External pin 2 synchronization (Jaguar2 only)*/
     VTSS_PTP_PIN_3_SYNC_EV =(1 << 8), /*< PTP External pin 3 synchronization (Jaguar2 only)*/
+    VTSS_PTP_PIN_4_SYNC_EV =(1 << 9), /*< PTP External pin 4 synchronization (Laguna)*/
+    VTSS_PTP_PIN_5_SYNC_EV =(1 << 10),/*< PTP External pin 5 synchronization (Laguna)*/
 } vtss_ptp_event_type_t;
 
 /**
@@ -502,6 +505,26 @@ vtss_rc vtss_dev_all_event_enable(const vtss_inst_t                inst,
                                   const vtss_dev_all_event_type_t  ev_mask,
                                   const BOOL                       enable);
 
+/** \brief MDIO controller */
+typedef struct
+{
+    u32                miim_freq;   /*< Frequency of the MDIO bus in hz */
+} vtss_mdio_conf_t;
+
+/**
+ * \brief Set MDIO controller config
+ *
+ * \param inst     [IN] Target instance reference.
+ * \param ctrl_id  [IN] Controller instance id
+ * \param conf     [IN] MDIO configuration
+ *
+ * \return Return code.
+ **/
+
+vtss_rc vtss_mdio_conf_set(const vtss_inst_t inst,
+                           const u8 ctrl_id,
+                           const vtss_mdio_conf_t *const conf);
+
 #endif /* VTSS_FEATURE_MISC */
 
 /* - GPIOs --------------------------------------------------------- */
@@ -512,17 +535,17 @@ vtss_rc vtss_dev_all_event_enable(const vtss_inst_t                inst,
 #define VTSS_GPIOS         32
 #endif /* VTSS_ARCH_LUTON26/SERVAL */
 
-#if defined(VTSS_ARCH_JAGUAR_2)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
 /** \brief Number of GPIOs */
 #undef VTSS_GPIOS
 #define VTSS_GPIOS         64
-#endif /* VTSS_ARCH_JAGUAR_2 */
+#endif /* VTSS_ARCH_JAGUAR_2/SPARX5 */
 
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_LAN969X)
 /** \brief Number of GPIOs */
 #undef VTSS_GPIOS
-#define VTSS_GPIOS         64
-#endif /* VTSS_ARCH_SPARX5 */
+#define VTSS_GPIOS         67
+#endif /* VTSS_ARCH_LAN969X */
 
 #if defined(VTSS_ARCH_LAN966X)
 /** \brief Number of GPIOs */
@@ -656,7 +679,10 @@ typedef enum {
     VTSS_GPIO_FUNC_PTP_1,   // PTP 1 GPIO functionality
     VTSS_GPIO_FUNC_PTP_2,   // PTP 2 GPIO functionality
     VTSS_GPIO_FUNC_PTP_3,   // PTP 3 GPIO functionality
-    VTSS_GPIO_FUNC_PTP_4    // PTP 4 GPIO functionality
+    VTSS_GPIO_FUNC_PTP_4,   // PTP 4 GPIO functionality
+    VTSS_GPIO_FUNC_PTP_5,   // PTP 5 GPIO functionality
+    VTSS_GPIO_FUNC_PTP_6,   // PTP 6 GPIO functionality
+    VTSS_GPIO_FUNC_PTP_7    // PTP 7 GPIO functionality
 } vtss_gpio_func_t;
 
 // GPIO functionality ALT mode
@@ -664,7 +690,8 @@ typedef enum
 {
     VTSS_GPIO_FUNC_ALT_0,  // Alternate function 0
     VTSS_GPIO_FUNC_ALT_1,  // Alternate function 1
-    VTSS_GPIO_FUNC_ALT_2   // Alternate function 2
+    VTSS_GPIO_FUNC_ALT_2,  // Alternate function 2
+    VTSS_GPIO_FUNC_ALT_3,  // Alternate function 3
 } vtss_gpio_func_alt_t;
 
 // GPIO functionality information
@@ -691,7 +718,7 @@ typedef vtss_rc (*vtss_gpio_func_info_get_t)(const vtss_inst_t       inst,
 
 #if defined(VTSS_FEATURE_SERIAL_GPIO)
 
-#if defined(VTSS_ARCH_LUTON26) || defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_SERVAL_T) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_LUTON26) || defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_SERVAL_T) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
 /** \brief Number of serial GPIO groups */
 #define VTSS_SGPIO_GROUPS 1
 #endif /* VTSS_ARCH_LUTON26/SERVAL/SERVAL_T */
@@ -1289,6 +1316,63 @@ typedef struct {
 vtss_rc vtss_symreg_data_get(const vtss_inst_t   inst,
                              vtss_symreg_data_t *const data);
 
+
+typedef enum {
+    VTSS_VSCOPE_FAST_SCAN,
+    VTSS_VSCOPE_FULL_SCAN,
+} vtss_vscope_scan_t;
+
+typedef struct {
+    vtss_vscope_scan_t scan_type; /**<selects the type of scan to be implemented */
+    BOOL enable;                  /**<enable or disable vscope fast scan*/
+    u32  error_thres;             /**<error_threshold for vscope calculations */
+} vtss_vscope_conf_t;
+
+#if defined(VTSS_FEATURE_VSCOPE)
+vtss_rc vtss_vscope_conf_set(const vtss_inst_t inst,
+                             const vtss_port_no_t port_no,
+                             const vtss_vscope_conf_t *const conf);
+
+vtss_rc vtss_vscope_conf_get(const vtss_inst_t inst,
+                             const vtss_port_no_t port_no,
+                             vtss_vscope_conf_t *const conf);
+
+#define VSCOPE_BOOLEAN_STORAGE_COUNT  6    /**<BOOL parameters to be stored during Vscope Scan */
+#define VSCOPE_UNSIGNED_STORAGE_COUNT 5    /**<UNSIGNED parameters to be stored during Vscope Scan */
+
+typedef struct {
+    BOOL ib_storage_bool[VSCOPE_BOOLEAN_STORAGE_COUNT];    /**<boolean values to be stored in vtss_state during vscope fast scan configuration */
+    u32  ib_storage[VSCOPE_UNSIGNED_STORAGE_COUNT];        /**<u8 values to be stored in vtss_state during vscope fast scan configuration */
+} vtss_vscope_ib_storage_t;
+
+/**\brief VSCOPE scan configuration */
+typedef struct{
+        BOOL line;      /**<selects line or host side, 1 for line */
+        u32 x_start;    /**<start value for x (0-127)*/
+        u32 y_start;    /**<start value for y (0-63)*/
+        u32 x_incr;     /**<increment value for x during the scan */
+        u32 y_incr;     /**<increment value for y during the scan */
+        u32 x_count;    /**<max value for x ( upto which scan is to be performed) */
+        u32 y_count;    /**<max value for y ( upto which scan is to be performed) */
+        u32 ber;        /**<bit error rate */
+} vtss_vscope_scan_conf_t;
+
+#define PHASE_POINTS    128 /**<phase points range from 0-127 */
+#define AMPLITUDE_POINTS 64 /**<amplitude points range from 0-63 */
+
+/**\ brief Vscope eye scan status*/
+typedef struct {
+        vtss_vscope_scan_conf_t scan_conf; /**<scan configuration data */
+        i32 error_free_x;       /**<error free x values in case of fast eye scan */
+        i32 error_free_y;       /**<error free y values in case of fast eye scan */
+        i32 amp_range;          /**<amp range in case of fast eye scan */
+        u32 errors[PHASE_POINTS][AMPLITUDE_POINTS]; /**<error matrix in full scan mode */
+} vtss_vscope_scan_status_t;
+
+vtss_rc vtss_vscope_scan_status_get(const vtss_inst_t inst,
+                                    const vtss_port_no_t port_no,
+                                    vtss_vscope_scan_status_t *const conf);
+#endif /* VTSS_FEATURE_VSCOPE) */
 #ifdef __cplusplus
 }
 #endif

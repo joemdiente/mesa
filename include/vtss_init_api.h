@@ -63,6 +63,19 @@ typedef enum {
     VTSS_TARGET_7558TSN            = 0x47558, /**< SparX-5-200i Industrial Switch */
     VTSS_TARGET_LAN9662            = 0x9662,  /**< LAN9662 switch */
     VTSS_TARGET_LAN9668            = 0x9668,  /**< LAN9668 switch */
+
+    VTSS_TARGET_LAN9694            = 0x9694,  /**< Laguna-40:      +40G Ethernet switch */
+    VTSS_TARGET_LAN9691VAO         = 0x9691,  /**< Laguna-40-VAO:  +40G Automotive TSN Ethernet switch */
+    VTSS_TARGET_LAN9694TSN         = 0x9695,  /**< Laguna-40-TSN:  +40G TSN Ethernet switch */
+    VTSS_TARGET_LAN9694RED         = 0x969A,  /**< Laguna-40-RED:  +40G TSN Ethernet switch with PRP/HSR */
+    VTSS_TARGET_LAN9696            = 0x9696,  /**< Laguna-60:      +60G Ethernet switch */
+    VTSS_TARGET_LAN9692VAO         = 0x9692,  /**< Laguna-65-VAO:  +65G Automotive TSN Ethernet switch */
+    VTSS_TARGET_LAN9696TSN         = 0x9697,  /**< Laguna-60-TSN:  +60G TSN Ethernet switch */
+    VTSS_TARGET_LAN9696RED         = 0x969B,  /**< Laguna-60-RED:  +60G TSN Ethernet switch with PRP/HSR */
+    VTSS_TARGET_LAN9698            = 0x9698,  /**< Laguna-100:     +80G Ethernet switch */
+    VTSS_TARGET_LAN9693VAO         = 0x9693,  /**< Laguna-100-VAO: +80G Automotive TSN Ethernet switch */
+    VTSS_TARGET_LAN9698TSN         = 0x9699,  /**< Laguna-100-TSN: +80G TSN Ethernet switch */
+    VTSS_TARGET_LAN9698RED         = 0x969C,  /**< Laguna-100-RED: +80G TSN Ethernet switch with PRP/HSR */
 } vtss_target_type_t;
 
 /** \brief Create structure */
@@ -418,14 +431,23 @@ typedef struct {
 /** \brief Core clock frequency */
 typedef enum {
     VTSS_CORE_CLOCK_DEFAULT,  /**< Defaults to the highest supported frequency */
-    VTSS_CORE_CLOCK_250MHZ,   /**< 250MHZ core clock frequency */
-    VTSS_CORE_CLOCK_500MHZ,   /**< 500MHZ core clock frequency */
-    VTSS_CORE_CLOCK_625MHZ,   /**< 625MHZ core clock frequency */
+    VTSS_CORE_CLOCK_180MHZ,   /**< 179.7234374 MHz core (Laguna) */
+    VTSS_CORE_CLOCK_250MHZ,   /**< 250MHZ core clock frequency (FA) */
+    VTSS_CORE_CLOCK_328MHZ,   /**< 328.19095313549 MHz core (Laguna) */
+    VTSS_CORE_CLOCK_500MHZ,   /**< 500MHZ core clock frequency (FA) */
+    VTSS_CORE_CLOCK_625MHZ,   /**< 625MHZ core clock frequency (FA) */
 } vtss_core_clock_freq_t;
+
+typedef enum {
+    VTSS_CORE_REF_CLK_DEFAULT, /**< Use strapping pin (0=25Mhz/1=39Mhz) */
+    VTSS_CORE_REF_CLK_25MHZ,   /**< Force to use 25Mhz ref. clock */
+    VTSS_CORE_REF_CLK_39MHZ,   /**< Force to use 39.0625Mhz (156.25/4) ref. clock */
+} vtss_core_ref_clk_t;
 
 /** \brief Core clock configuration */
 typedef struct {
     vtss_core_clock_freq_t freq;   /**< The frequency of the core clock (LC-PLL) */
+    vtss_core_ref_clk_t ref_freq;  /**< The frequency of the reference clock */
 } vtss_core_clock_conf_t;
 #endif /* VTSS_FEATURE_CORE_CLOCK */
 

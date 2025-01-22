@@ -41,6 +41,11 @@ typedef struct {
     vtss_rc (* dev_all_event_enable)(struct vtss_state_s *vtss_state,
                                      vtss_port_no_t port,
                                      vtss_dev_all_event_type_t ev_mask, BOOL enable);
+
+    vtss_rc (* mdio_conf_set)(struct vtss_state_s *vtss_state,
+                              const u8 ctrl_id,
+                              const vtss_mdio_conf_t *const conf);
+
 #if defined(VTSS_FEATURE_SERIAL_GPIO)
     vtss_rc (* sgpio_conf_set)(struct vtss_state_s *vtss_state,
                                const vtss_chip_no_t     chip_no,
@@ -105,9 +110,7 @@ typedef struct {
     /* Configuration/state */
     vtss_chip_id_t                chip_id;
     BOOL                          jr2_a; /* Jaguar-2 revision A */
-    u32                           gpio_count;
 #if defined(VTSS_FEATURE_SERIAL_GPIO)
-    u32                           sgpio_group_count;
     vtss_sgpio_conf_t             sgpio_conf[VTSS_CHIP_CNT][VTSS_SGPIO_GROUPS];
     vtss_sgpio_event_enable_t     sgpio_event_enabled[VTSS_CHIP_CNT][VTSS_SGPIO_GROUPS];
 #endif /* VTSS_FEATURE_SERIAL_GPIO */
@@ -117,6 +120,17 @@ typedef struct {
     u32                           irq_user_space_owned_mask;  /**< Mask indicating whether an IRQ is owned by user space or another entity */
 #endif /* VTSS_ARCH_LUTON26 */
 #endif /* defined(VTSS_FEATURE_IRQ_CONTROL) */
+#if defined(VTSS_FEATURE_VSCOPE)
+    vtss_vscope_conf_t vscope_conf[20];
+
+    vtss_rc (* vscope_conf_set)(struct vtss_state_s *vtss_state,
+                                const vtss_port_no_t chip_port,
+                                const vtss_vscope_conf_t *const conf);
+
+    vtss_rc (* vscope_scan_status_get)(struct vtss_state_s *vtss_state,
+                                       const vtss_port_no_t chip_port,
+                                       vtss_vscope_scan_status_t  *const conf);
+#endif /* VTSS_FEATURE_VSCOPE */
 } vtss_misc_state_t;
 
 vtss_rc vtss_misc_inst_create(struct vtss_state_s *vtss_state);

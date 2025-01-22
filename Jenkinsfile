@@ -24,7 +24,7 @@ node('blademaster') {
                 $class: 'GitSCM',
                 branches: scm.branches,
                 doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
-                extensions: scm.extensions + [[$class: 'CloneOption', noTags: false, reference: '/gitref/mesa.git', shallow: false]],
+                extensions: scm.extensions + [[$class: 'CloneOption', noTags: false, shallow: false]],
                 submoduleCfg: [],
                 userRemoteConfigs: scm.userRemoteConfigs
             ])
@@ -40,7 +40,7 @@ node('blademaster') {
                 def git_id = sh(script: "git describe --tags --long", returnStdout: true).trim()
                 def branch = env.BRANCH_NAME
                 manager.addShortText("${git_id}@${branch}")
-                sh "./.cmake/release.rb --simplegrid --internal-checks"
+                sh "dr ./.cmake/release.rb --simplegrid --internal-checks"
             }
         } catch (error) {
             currentBuild.result = 'FAILURE'
@@ -59,7 +59,7 @@ node('blademaster') {
 
         stage("Backwards compatibility") {
             try {
-                sh "./.cmake/backwards-compatibility-check.rb"
+                sh "dr ./.cmake/backwards-compatibility-check.rb"
             } catch (error) {
                 currentBuild.result = 'FAILURE'
                 throw error

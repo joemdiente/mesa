@@ -3,7 +3,7 @@
 
 ---
 conf:
-    rel_name: "MEPA-2022.12"
+    rel_name: "MEPA-2023.03"
 
 pages:
     - name: "README"
@@ -19,6 +19,11 @@ pages:
           src:  "mepa/docs/release-notes/mepa-2022.09.adoc"
         - name: "MEPA-2022.12"
           src:  "mepa/docs/release-notes/mepa-2022.12.adoc"
+        - name: "MEPA-2023.03"
+          src:  "mepa/docs/release-notes/mepa-2023.03.adoc"
+        - name: "MEPA-2023.09"
+          src:  "mepa/docs/release-notes/mepa-2023.09.adoc"
+
 
     - name: "Introduction"
       src:  "mepa/docs/introduction.adoc"
@@ -33,13 +38,16 @@ pages:
         - src: "mepa/docs/diag.adoc"
         - src: "mepa/docs/events.adoc"
         - src: "mepa/docs/timestamp.adoc"
+        - src: "mepa/docs/macsec.adoc"
+        - src: "mepa/docs/warm-restart-phy.adoc"
+        - src: "mepa/docs/eee.adoc"
+        - src: "mepa/docs/phy-reset-considerations.adoc"
 
     - name: "MEPA API Reference"
       pages:
         - src:  "me/include/microchip/ethernet/common.h"
-        - src:  "mepa/common/include/mepa_driver.h"
-        - src:  "mepa/common/include/mepa_ts_driver.h"
         - src:  "mepa/include/microchip/ethernet/phy/api/phy_ts.h"
+        - src:  "mepa/include/microchip/ethernet/phy/api/phy_macsec.h"
         - src:  "mepa/include/microchip/ethernet/phy/api/types.h"
         - src:  "mepa/include/microchip/ethernet/phy/api/phy.h"
         - src:  "mepa/include/microchip/ethernet/phy/api.h"

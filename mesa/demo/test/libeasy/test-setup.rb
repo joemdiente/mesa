@@ -911,14 +911,14 @@ def upload_utils conf
 
 end
 
-$easyframes_sha = "ce45ec85871ad2f1412a964868f8ad11bf581bfc"
+$easyframes_sha = "0d1c8c257e29c8e5594082d6f38c9271c12bcfbf"
 
 UBOOT_PROMPTS = ["m => ", "ocelot # ", "luton # ", "jr2 # ", "servalt # ", "=> "]
 
 class Mesa_Pc_b2b
-    attr_accessor :dut, :pc, :links, :ts_external_clock_looped, :port_admin, :port_map
+    attr_accessor :dut, :pc, :links, :ts_rs422, :ts_external_clock_looped, :port_admin, :port_map, :labels
 
-    def initialize conf, mesa_args, port_cnt, topo_name
+    def initialize conf, mesa_args, port_cnt, topo_name, labels
         #Default topology
         dut_url = conf["dut"]["terminal"]
         dut_args = conf["dut"]["mesa_demo_args"]
@@ -960,11 +960,10 @@ class Mesa_Pc_b2b
 
         #Create the DUT
         @dut = MesaDut.new :mesa, dut_url, dut_ports, dut_looped_ports, dut_looped_ports_10g, port_admin, pcb, cap
+        @labels = labels
 
         if conf.key?("easytest_cmd_server")
             @pc = TestPCRemote.new conf["easytest_cmd_server"], pc_ports, conf["easytest_server"]
-            @pc.bash_function "rvm use 2.6.2"
-            #@pc.run "rvm info"
             upload_utils conf
             @pc.run "bundle-install.sh"
             @pc.run "lazy-ef-install.rb #{$easyframes_sha}" # TODO, find a better place to store this data
@@ -974,6 +973,7 @@ class Mesa_Pc_b2b
 
         @links = dut_ports.zip(pc_ports).map{|e| {:dut => e[0], :pc => e[1]}}
         @ts_external_clock_looped = (conf["ts_external_clock_looped"] == true) ? true : false
+        @ts_rs422 = (conf["ts_rs422"] == true) ? true : false
         if conf["pc"].key?("et_idx")
             @pc.bash_function "export IDX=#{conf["pc"]["et_idx"]}"
         end
@@ -1048,8 +1048,8 @@ class Mesa_Pc_b2b
         t_i "Reached to UBoot console"
         return true
 
-      rescue => e
-        t_backtrace e
+      rescue
+        t_i "Could not reach uboot prompt"
         return false
       end
     end
@@ -1151,6 +1151,9 @@ class Mesa_Pc_b2b
     def reboot_dut conf
       if ((conf["dut"]["pcb"] == "6849-Sunrise") && (conf["dut"]["family"] == "laguna"))
         trigger_laguna_reboot_dut conf
+      elsif conf["dut"]["pcb"] == "8398"
+        t_i "Power cycle board (usb/gpio)"
+        @pc.run conf["power_control"]
       else
         trigger_reboot_dut conf
       end
@@ -1208,7 +1211,19 @@ def show_mesa_setup(ts)
                 txt += " "
             end
 
-            t_i("+---------+" + txt + "+---------+") if (idx == 0)
+            if (idx == 0)
+                a = ts.labels["platform"].split("_t3")
+                if (a.size == 2)
+                    len = (txt.length + 12)
+                    l = ("   t3" + a[1])
+                    while (l.length < len)
+                        l += " "
+                    end
+                    l += a[0]
+                    t_i(l)
+                end
+                t_i("+---------+" + txt + "+---------+")
+            end
             t_i(str)
             if (idx == ((cnt / 2) - 1))
                 t_i("|   PC    |" + txt + "|   DUT   |")
@@ -1262,14 +1277,14 @@ def dut_init_block name
     exit -1 if has_err
 end
 
-def get_test_setup_inner(setup, conf, mesa_args, topo_name)
+def get_test_setup_inner(setup, conf, mesa_args, topo_name, labels)
     case setup
     when "mesa_pc_b2b_4x"
-        ts = Mesa_Pc_b2b.new(conf, mesa_args, 4, topo_name)
+        ts = Mesa_Pc_b2b.new(conf, mesa_args, 4, topo_name, labels)
         show_mesa_setup(ts)
         return ts
     when "mesa_pc_b2b_2x"
-        ts = Mesa_Pc_b2b.new(conf, mesa_args, 2, topo_name)
+        ts = Mesa_Pc_b2b.new(conf, mesa_args, 2, topo_name, labels)
         show_mesa_setup(ts)
         return ts
     else
@@ -1291,6 +1306,12 @@ def git_info cmd, env = nil, default = "UNKNOWN"
     end
 end
 
+$FPGAs = {
+    # To promote a new FPGA such that it can be installed go to soft00 and use
+    # the promote-lan969x-fpga.sh <version> command
+    "9698@6849-Sunrise" => { :v => "H21228AAA", :t => "lan969x-fpga", :n => "lan969-sr", :f => "sunrise_top_"}
+}
+
 def get_test_setup(setup, labels= {}, mesa_args = "", topo_name = "default")
     # URI:
     #    telnet://  -> if using a terminal server
@@ -1309,6 +1330,21 @@ def get_test_setup(setup, labels= {}, mesa_args = "", topo_name = "default")
         labels["platform"]  = conf["platform_name"]
     else
         labels["platform"]  = "Name_missing_in_topology_file"
+    end
+
+    fpga_key = "#{conf["dut"]["vsc"].to_i.to_s(16)}@#{conf["dut"]["pcb"]}"
+    if $FPGAs[fpga_key]
+        ver = ""
+        if ENV["FPGA"]
+            ver = ENV["FPGA"]
+        else
+            ver = $FPGAs[fpga_key][:v]
+        end
+
+        type = "#{$FPGAs[fpga_key][:t]}/#{ver}"
+        name = "#{$FPGAs[fpga_key][:n]}-#{ver}"
+        run "mscc-install-pkg -t #{type} #{name}", ["no_nest"]
+        run "/easytest/easytest/test-setup-server/et fpga-upload /opt/mscc/#{$FPGAs[fpga_key][:n]}-#{ver}/#{$FPGAs[fpga_key][:f]}#{ver}.bit", ["no_nest"]
     end
 
     hist_name = "#{file_base_name}@#{labels["platform"]}_history"
@@ -1355,27 +1391,13 @@ def get_test_setup(setup, labels= {}, mesa_args = "", topo_name = "default")
     xml_tag_end "labels"
 
     dut_init_block setup do
-        ts = get_test_setup_inner(setup, conf, mesa_args, topo_name)
+        ts = get_test_setup_inner(setup, conf, mesa_args, topo_name, labels)
         $global_test_setup = ts
 
         if (defined? ts.dut) and ts.dut.api == :mesa
-            ports = ts.dut.call("mesa_vlan_port_members_get", 1)
-            ports_a = ports.split(",").map(&:to_i)
-            if (ts.dut.looped_port_list != nil)    # Check for looped front ports and remove them from VLAN 1 to avoid looping
-                ts.dut.looped_port_list.each { |port|
-                    ports_a.delete(port)
-                }
-            end
-            if (ts.dut.looped_port_list_10g != nil)    # Check for looped front ports and remove them from VLAN 1 to avoid looping
-                ts.dut.looped_port_list_10g.each { |port|
-                    ports_a.delete(port)
-                }
-            end
-            ports = ports_a.join(',')
+            # Only include DUT normal ports in VLAN 1 (loop ports and admin port excluded)
+            ports = ts.dut.p.join(',')
             ts.dut.call("mesa_vlan_port_members_set", 1, ports)
-            if (ts.dut.port_admin != nil)
-                ts.dut.run("mesa-cmd port state #{ts.dut.port_admin} disable") # Disable the admin port
-            end
 
             cl = ts.dut.call("mesa_capability", "MESA_CAP_INIT_CORE_CLOCK")
             if (cl != 0)

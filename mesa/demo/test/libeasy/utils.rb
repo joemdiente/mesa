@@ -27,7 +27,7 @@ end
 
 # Convert MAC address array to string
 def mac_to_txt(mac)
-    mac.map {|s| s.to_s(16)}.join ":"
+    mac.map {|s| s.to_s(16).rjust(2,'0')}.join ":"
 end
 
 # Convert IPv4 integer to string
@@ -144,8 +144,11 @@ def dut_cap_check_exit(cap)
     end
 end
 
-def loop_pair_check
+def loop_pair_check(loop_10g = false)
     port_list = $ts.dut.looped_port_list
+    if (port_list == nil and loop_10g)
+        port_list = $ts.dut.looped_port_list_10g
+    end
 
     check_capabilities do
         assert(port_list != nil && port_list.length > 1, "Two front ports must be looped")
@@ -154,6 +157,7 @@ def loop_pair_check
     check_capabilities do
         assert(dut_port_state_up(port_list.take(2)), "Loop ports must be up")
     end
+    return port_list
 end
 
 def check_val(name, val, exp, fmt)
@@ -228,6 +232,12 @@ def cmd_rx_ifh_push(ifh={})
     when 13
         # Maserati
         cmd += " ifh-mas ign"
+    when 14
+        # Laguna
+        cmd += " ifh-la ign"
+        port_name = "f-src-port"
+        isdx_name = "vm1-isdx"
+        vid_name = "vt-cl-vid"
     else
         # Luton26, no prefix
         cmd = "efh-crcl ign"
@@ -437,6 +447,7 @@ def chip_family_to_id(txt)
     when "MESA_CHIP_FAMILY_OCELOT";  return 8
     when "MESA_CHIP_FAMILY_SPARX5"; return 9
     when "MESA_CHIP_FAMILY_LAN966X"; return 10
+    when "MESA_CHIP_FAMILY_LAN969X"; return 11
     else; t_e("mesa_chip_family '#{txt}' not known")
     end
 end
@@ -955,7 +966,7 @@ def qspi_init
     ol = "/sys/kernel/config/device-tree/overlays/tsys01"
     $ts.dut.run("mount -t configfs none /sys/kernel/config")
     $ts.dut.run("mkdir -p #{ol}")
-    $ts.dut.run("sh -c 'cat /overlays/qspi_overlay.dtbo > #{ol}/dtbo'")
+    $ts.dut.run("sh -c 'cat /overlays/lan966x_pcb8309_qspi_rte.dtbo > #{ol}/dtbo'")
 end
 
 def io_read_val(txt)

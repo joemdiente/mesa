@@ -645,6 +645,27 @@ vtss_rc vtss_phy_ts_fifo_read_cb_get(const vtss_inst_t      inst,
                                      vtss_phy_ts_fifo_read  *rd_cb,
                                      void                   **cntxt);
 
+#define VTSS_PHY_TS_FIFO_MAX_ENTRIES 8 //In all vsc phys, maximum number of FIFO entries is 8.
+typedef struct {
+    vtss_phy_ts_fifo_sig_t sig;
+    vtss_phy_timestamp_t ts;
+} vtss_phy_ts_fifo_entry_t;
+
+/**
+ * \brief Get FIFO timestamp entries.
+ *
+ * \param inst     [IN]   handle to an API instance
+ * \param port_no  [IN]   port number
+ * \param ts_list  [OUT]  Array to hold retrieved FIFO timestamp entries
+ * \param size     [IN]   size of ts_list array passed to this function.
+ * \param num      [OUT]  Number of fifo timestamp entries read.
+ **/
+vtss_rc vtss_phy_ts_fifo_get(const vtss_inst_t        inst,
+                             const vtss_port_no_t     port_no,
+                             vtss_phy_ts_fifo_entry_t ts_list[],
+                             const size_t             size,
+                             uint32_t                 *const num);
+
 /**
  * Analyzer API
  **/
@@ -671,6 +692,7 @@ typedef enum {
 
     VTSS_PHY_TS_ENCAP_ANY, /* Timestamp all packets */
     VTSS_PHY_TS_ENCAP_ETH_GEN, /* Generic timestamping */
+    VTSS_PHY_TS_ENCAP_ETH_HSR_PTP,/* HSR encap */
     VTSS_PHY_TS_ENCAP_NONE,
 } vtss_phy_ts_encap_t;
 
@@ -1218,6 +1240,7 @@ typedef enum {
     VTSS_PHY_TS_PTP_CLOCK_MODE_TC1STEP, /**< Transparent clock, 1 step */
     VTSS_PHY_TS_PTP_CLOCK_MODE_TC2STEP, /**< Transparent clock, 2 step */
     VTSS_PHY_TS_PTP_DELAY_COMP_ENGINE,  /**<  Delay Compenstaion */
+    VTSS_PHY_TS_PTP_CLOCK_MODE_NONE, /**< No clock when PTP engine is disabled */
 } vtss_phy_ts_ptp_clock_mode_t;
 
 /**
@@ -1570,6 +1593,7 @@ vtss_rc vtss_phy_ts_mode_get(const vtss_inst_t     inst,
  * \brief Timestamp block clock frequencies
  **/
 typedef enum {
+    VTSS_PHY_TS_CLOCK_FREQ_25M,   /**< 25 MHz */
     VTSS_PHY_TS_CLOCK_FREQ_125M,   /**< 125 MHz */
     VTSS_PHY_TS_CLOCK_FREQ_15625M, /**< 156.25 MHz */
     VTSS_PHY_TS_CLOCK_FREQ_200M,   /**< 200 MHz */

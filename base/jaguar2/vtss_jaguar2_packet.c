@@ -683,9 +683,40 @@ static vtss_rc jr2_rx_frame(vtss_state_t         *vtss_state,
 }
 
 
-/*****************************************************************************/
-// jr2_ptp_action_to_ifh()
-/*****************************************************************************/
+static u32 jr2_plpt_to_ifh(vtss_packet_pipeline_pt_t plpt)
+{
+    switch (plpt) {
+    case VTSS_PACKET_PIPELINE_PT_NONE: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_RB: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_VRAP: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_PORT_VOE: return(2);
+    case VTSS_PACKET_PIPELINE_PT_ANA_CL: return(3);
+    case VTSS_PACKET_PIPELINE_PT_ANA_CLM: return(4);
+    case VTSS_PACKET_PIPELINE_PT_ANA_IPT_PROT: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_OU_VOI: return(6);
+    case VTSS_PACKET_PIPELINE_PT_ANA_OU_SW: return(7);
+    case VTSS_PACKET_PIPELINE_PT_ANA_OU_PROT: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_OU_VOE: return(9);
+    case VTSS_PACKET_PIPELINE_PT_ANA_MID_PROT: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_IN_VOE: return(11);
+    case VTSS_PACKET_PIPELINE_PT_ANA_IN_PROT: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_IN_SW: return(13);
+    case VTSS_PACKET_PIPELINE_PT_ANA_IN_VOI: return(14);
+    case VTSS_PACKET_PIPELINE_PT_ANA_VLAN: return(0);
+    case VTSS_PACKET_PIPELINE_PT_ANA_DONE: return(16);
+    case VTSS_PACKET_PIPELINE_PT_REW_IN_VOI: return(17);
+    case VTSS_PACKET_PIPELINE_PT_REW_IN_SW: return(18);
+    case VTSS_PACKET_PIPELINE_PT_REW_IN_VOE: return(19);
+    case VTSS_PACKET_PIPELINE_PT_REW_OU_VOE: return(20);
+    case VTSS_PACKET_PIPELINE_PT_REW_OU_SW: return(21);
+    case VTSS_PACKET_PIPELINE_PT_REW_OU_VOI: return(22);
+    case VTSS_PACKET_PIPELINE_PT_REW_OU_SAT: return(0);
+    case VTSS_PACKET_PIPELINE_PT_REW_PORT_VOE: return(24);
+    case VTSS_PACKET_PIPELINE_PT_REW_VCAP: return(0);
+    }
+    return(0);
+}
+
 static vtss_rc jr2_ptp_action_to_ifh(vtss_packet_ptp_action_t ptp_action, BOOL afi, u32 *result)
 {
     vtss_rc rc = VTSS_RC_OK;
@@ -768,21 +799,35 @@ static vtss_rc jr2_tx_hdr_encode(vtss_state_t                *const state,
         u64            chip_port_mask;
         vtss_chip_no_t chip_no;
         vtss_port_no_t stack_port_no;
-        u32            port_cnt;
+        u32            port_cnt, mi_port;
         vtss_port_no_t port_no; /* Only valid if port_cnt == 1 */
-        BOOL           rewrite;
+        BOOL           rewrite, miroring = FALSE;
 
         VTSS_RC(vtss_cmn_logical_to_chip_port_mask(state, info->dst_port_mask, &chip_port_mask, &chip_no, &stack_port_no, &port_cnt, &port_no));
 
         // Get the frame classified to info->tag.vid and rewritten accordingly if requested to.
         rewrite = info->tag.tpid == 0 && info->tag.vid != VTSS_VID_NULL;
 
+        mi_port = state->l2.mirror_conf.port_no;
 #ifdef VTSS_FEATURE_MIRROR_CPU
-        // Add mirror port if enabled.
-        if (state->l2.mirror_conf.port_no != VTSS_PORT_NO_NONE && state->l2.mirror_cpu_ingress) {
-            fwd |= VTSS_ENCODE_BITFIELD64(JR2_MIRROR_PROBE_RX + 1 /* 1-based in this field */, 33, 2);
+        if (mi_port < state->port_count && state->l2.mirror_cpu_ingress) {
+            // CPU port ingress mirroring is enabled
+            miroring = TRUE;
         }
 #endif
+        // Add mirror port if egress mirroring is enabled on port in dst_port_mask
+        if (mi_port < state->port_count) {
+            for (u32 i = 0; i < state->port_count; i++) {
+                if ((info->dst_port_mask & (1 << i)) && state->l2.mirror_egress[i]) {
+                    // Egress mirroring on a destination port is enabled
+                    miroring = TRUE;
+                    break;
+                }
+            }
+        }
+        if (miroring && state->l2.port_state[mi_port]) { // Mirroring is requested and the link is up
+            fwd |= VTSS_ENCODE_BITFIELD64(JR2_MIRROR_PROBE_RX + 1 /* 1-based in this field */, 33, 2);
+        }
 
         if (info->ptp_action == VTSS_PACKET_PTP_ACTION_NONE &&
             info->oam_type   == VTSS_PACKET_OAM_TYPE_NONE) {
@@ -831,7 +876,7 @@ static vtss_rc jr2_tx_hdr_encode(vtss_state_t                *const state,
                 vstax_lo |= VTSS_ENCODE_BITFIELD64(1, 59, 1);                    // Super Priority
                 dst      |= VTSS_ENCODE_BITFIELD64(info->pdu_offset / 2, 38, 6); // PDU_W16_OFFSET = 7 when DST_MODE == ENCAP
                 dst  |= VTSS_ENCODE_BITFIELD64(1,                    35, 3); // PDU_TYPE = OAM_Y1731
-                fwd      |= VTSS_ENCODE_BITFIELD64(info->pipeline_pt,    18, 5); // MISC.PIPELINE_PT = pipeline_pt_val
+                fwd      |= VTSS_ENCODE_BITFIELD64(jr2_plpt_to_ifh(info->pipeline_pt), 18, 5); // MISC.PIPELINE_PT = pipeline_pt_val
                 if (((info->pipeline_pt == VTSS_PACKET_PIPELINE_PT_REW_IN_VOE) || (info->pipeline_pt == VTSS_PACKET_PIPELINE_PT_REW_OU_VOE)) &&
                     ((info->oam_type == VTSS_PACKET_OAM_TYPE_DMM) || (info->oam_type == VTSS_PACKET_OAM_TYPE_1DM))) {    // DM injection into a service has an added dummy tag that must be popped
                     fwd  |= VTSS_ENCODE_BITFIELD64(1, 8, 2);                        // POP one tag
@@ -939,7 +984,7 @@ static vtss_rc jr2_tx_hdr_encode(vtss_state_t                *const state,
             vstax_lo |= VTSS_ENCODE_BITFIELD64(0, 60, 2);                      // Drop Precedence 0
             fwd      |= VTSS_ENCODE_BITFIELD64(0, 10, 8);                      // CPU_MASK = NO dport for switched frames
             fwd      |= VTSS_ENCODE_BITFIELD64(2, 23, 3);                      // MISC.PIPELINE_ACT = INJ_MASQ
-            fwd      |= VTSS_ENCODE_BITFIELD64(pipeline_pt, 18, 5);            // MISC.PIPELINE_PT = pipeline_pt_val
+            fwd      |= VTSS_ENCODE_BITFIELD64(jr2_plpt_to_ifh(pipeline_pt), 18, 5); // MISC.PIPELINE_PT = pipeline_pt_val
             fwd      |= VTSS_ENCODE_BITFIELD64(0, 38,  3);                     // DST_MODE = ENCAP
             fwd      &= ~VTSS_ENCODE_BITFIELD64(0x3F, 27, 6);                  // SRC_PORT = 0
             fwd      |= VTSS_ENCODE_BITFIELD64(chip_port, 27, 6);              // SRC_PORT = masquerade port

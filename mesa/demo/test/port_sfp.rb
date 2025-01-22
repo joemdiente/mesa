@@ -20,11 +20,27 @@ $ts = get_test_setup("mesa_pc_b2b_2x", {}, "", "loop")
 # 6. Repeat for each supported speed.
 # 7. Repeat for each looped port pair in the setup.
 #--------------------------------------------------------------------------------
+plist = []
+if $ts.dut.looped_port_list != nil && $ts.dut.looped_port_list_10g != nil
+    plist = $ts.dut.looped_port_list + $ts.dut.looped_port_list_10g
+elsif $ts.dut.looped_port_list != nil
+    plist = $ts.dut.looped_port_list
+    $ts.dut.looped_port_list_10g = []
+elsif $ts.dut.looped_port_list_10g != nil
+    plist = $ts.dut.looped_port_list_10g
+    $ts.dut.looped_port_list = []
+end
 
 check_capabilities do
-    assert(($ts.dut.looped_port_list != nil) && ($ts.dut.looped_port_list.length > 1),
+    assert((plist != nil) && (plist.length > 1),
            "Two front ports must be looped")
 end
+
+# check_capabilities do
+#     assert(($ts.dut.looped_port_list != nil) && ($ts.dut.looped_port_list.length > 1) ||
+#            ($ts.dut.looped_port_list_10g= nil) && ($ts.dut.looped_port_list_10g.length > 1),
+#            "Two front ports must be looped")
+# end
 
 $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
 
@@ -57,7 +73,9 @@ end
 # Merge looped_port_list and looped_port_list_10g
 if $ts.dut.looped_port_list_10g
     $ts.dut.looped_port_list_10g.each do |idx|
-        $ts.dut.looped_port_list << idx
+        if !$ts.dut.looped_port_list.include?(idx)
+            $ts.dut.looped_port_list << idx
+        end
     end
 end
 
@@ -68,6 +86,7 @@ $vlan2ports = $p0.to_s
 $vlan3ports = $p1.to_s
 $bulk_frames = 1000000
 
+
 #---------- Now the test--------------------------------------------------------------
 i = 0
 dac = 0
@@ -75,19 +94,16 @@ test "Test SFP loop" do
     loop do
         conf = $ts.dut.call "mesa_port_conf_get", $ts.dut.looped_port_list[i]
         type = conf["if_type"]
-        if (type == "MESA_PORT_INTERFACE_SGMII" or type == "MESA_PORT_INTERFACE_QSGMII")
-            continue; # SFP test only
-        end
         if conf["serdes"]["media_type"].include? "DAC"
             dac = 1
             if conf["speed"].include? "25G" then spds = ["25g","10g","5g","2500","1000fdx","100fdx"] end
-            if conf["speed"].include? "10G" then spds = ["10g","5g","2500","1000fdx","100fdx"] end
+            if conf["speed"].include? "10G" then spds = ["10g","5g","2500","1000fdx","100fdx","1000fdx","2500","5g","10g"] end
             if conf["speed"].include? "2500" then spds = ["2500","1000fdx","100fdx"] end
             if conf["speed"].include? "1G" then spds = ["1000fdx","100fdx"] end
 
             if (($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5") && $ts.dut.looped_port_list[i] > 11) ||
                 ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")))
-                spds.pop # Remove 100fdx
+                spds.delete("100fdx") # Remove 100fdx
             end
         else
             dac = 0
@@ -95,6 +111,11 @@ test "Test SFP loop" do
             if conf["speed"].include? "10G" then spds = ["10g"] end
             if conf["speed"].include? "1G" then spds = ["1000fdx"] end
             if conf["speed"].include? "100M" then spds = ["100fdx"] end
+
+            if (type == "MESA_PORT_INTERFACE_SGMII" || type == "MESA_PORT_INTERFACE_QSGMII")
+                spds = ["1000fdx"]
+                sleep 3 # Indy phy is slow in linkup
+            end
         end
 
         if (spds == nil)
@@ -109,9 +130,10 @@ test "Test SFP loop" do
         $vlan3ports += ',' + $loop1.to_s
         vlan_add(2, $vlan2ports)
         vlan_add(3, $vlan3ports)
-
         spds.each {|spd|
-            $ts.dut.run "mesa-cmd port mode #{cli_ports} #{spd}"
+            if (type != "MESA_PORT_INTERFACE_SGMII" && type != "MESA_PORT_INTERFACE_QSGMII")
+                $ts.dut.run "mesa-cmd port mode #{cli_ports} #{spd}"
+            end
             t_i("==========================================================");
             t_i("======== DAC ports:#{cli_ports} speed:#{spd} =============")
             sleep 5

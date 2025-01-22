@@ -28,6 +28,10 @@ mesa_ptp_event_type_t meba_generic_ptp_source_to_event(meba_inst_t inst, meba_ev
             return MESA_PTP_PIN_2_SYNC_EV;
         case MEBA_EVENT_PTP_PIN_3:
             return MESA_PTP_PIN_3_SYNC_EV;
+        case MEBA_EVENT_PTP_PIN_4:
+            return MESA_PTP_PIN_4_SYNC_EV;
+        case MEBA_EVENT_PTP_PIN_5:
+            return MESA_PTP_PIN_5_SYNC_EV;
         default:
             T_E(inst, "Unknown event %d", event_id);
             MEBA_ASSERT(0);
@@ -108,6 +112,14 @@ mesa_rc meba_generic_ptp_handler(meba_inst_t inst, meba_event_signal_t signal_no
 
             if (ptp_events & MESA_PTP_PIN_3_SYNC_EV) {
                 signal_notifier(MEBA_EVENT_PTP_PIN_3, 0);
+                handled++;
+            }
+            if (ptp_events & MESA_PTP_PIN_4_SYNC_EV) {
+                signal_notifier(MEBA_EVENT_PTP_PIN_4, 0);
+                handled++;
+            }
+            if (ptp_events & MESA_PTP_PIN_5_SYNC_EV) {
+                signal_notifier(MEBA_EVENT_PTP_PIN_5, 0);
                 handled++;
             }
         }
@@ -314,6 +326,10 @@ void meba_phy_driver_init(meba_inst_t inst)
         // steps during their initialization that require no
         // activity on the MAC interface as it interferes with
         // the calibration.
+        if (inst->phy_devices[port_no] != NULL) {
+            continue; // Already probed
+        }
+
         inst->api.meba_port_entry_get(inst, port_no, &entry);
         mepa_port_interface_t mac_if = rgmii_id_convert(entry.mac_if);
         meba_port_cap_t port_cap = entry.cap;
@@ -323,6 +339,10 @@ void meba_phy_driver_init(meba_inst_t inst)
 
             mepa_board_conf_t board_conf = {};
             board_conf.numeric_handle = port_no;
+
+            if (port_cap & MEBA_PORT_CAP_DUMMY_PHY) {
+                board_conf.dummy_phy_cap = port_cap;
+            }
 
             inst->phy_device_ctx[port_no].inst = 0;
             inst->phy_device_ctx[port_no].port_no = port_no;

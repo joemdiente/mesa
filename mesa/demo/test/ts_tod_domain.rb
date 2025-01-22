@@ -5,29 +5,36 @@
 
 require_relative 'libeasy/et'
 require_relative 'ts_lib'
-require 'pry'
 
 $ts = get_test_setup("mesa_pc_b2b_2x", {}, "", "loop")
 
 check_capabilities do
     $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
-    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")),
-           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5). or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x).")
+    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")),
+           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")} (Lan969x).")
+    $cap_fpga = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_FPGA")
     $cap_epid = $ts.dut.call("mesa_capability", "MESA_CAP_PACKET_IFH_EPID")
     $cap_phy_ts = $ts.dut.call("mesa_capability", "MESA_CAP_PHY_TS")
     $cap_port_cnt = $ts.dut.call("mesa_capability", "MESA_CAP_PORT_CNT")
-    loop_pair_check
+    $loop_ports = []
+    if (($ts.dut.looped_port_list != nil) && (($ts.dut.looped_port_list.length % 2) == 0))
+        assert(dut_port_state_up($ts.dut.looped_port_list), "Loop ports must be up")
+        $loop_ports += $ts.dut.looped_port_list
+    end
+    if (($ts.dut.looped_port_list_10g != nil) && (($ts.dut.looped_port_list_10g.length % 2) == 0))
+        assert(dut_port_state_up($ts.dut.looped_port_list_10g), "Loop ports must be up")
+        $loop_ports += $ts.dut.looped_port_list_10g
+    end
+    t_i ("*********$loop_ports #{$loop_ports}  #{$loop_ports.length}*********")
+    assert((($loop_ports != nil) && (($loop_ports.length % 2) == 0)),
+           "Number of looped front ports must be multiples of two")
 end
-
-loop_pair_check
 
 $pcb = $ts.dut.pcb
 
 $port0 = 0
 $npi_port = 1
 $cpu_queue = 7
-$loop_port0 = 0
-$loop_port1 = 0
 
 $port_map = $ts.dut.call("mesa_port_map_get", $cap_port_cnt)
 
@@ -110,12 +117,6 @@ def tod_domain_test(domain, seconds)
     conf = $ts.dut.call("mesa_ts_operation_mode_get", $ts.dut.port_list[$port0])
     conf["domain"] = domain
     $ts.dut.call("mesa_ts_operation_mode_set", $ts.dut.port_list[$port0], conf)
-    conf = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port0)
-    conf["domain"] = domain
-    $ts.dut.call("mesa_ts_operation_mode_set", $loop_port0, conf)
-    conf = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port1)
-    conf["domain"] = domain
-    $ts.dut.call("mesa_ts_operation_mode_set", $loop_port1, conf)
 
     #Check that TOD in a domain can be configured and is incremented
     # Set TOD to 'second'
@@ -132,10 +133,12 @@ def tod_domain_test(domain, seconds)
 
     # Get previous PPS TOD. Only default domain call possible - there is no domain interface for this !!!
     if (domain_def)
+        $tod_ts[0]["seconds"] = seconds
+        $tod_ts[0]["nanoseconds"] = 100
         $ts.dut.call("mesa_ts_timeofday_set", $tod_ts[0])
         prev_ts = $ts.dut.call("mesa_ts_timeofday_prev_pps_get")
-        if (prev_ts["seconds"] != seconds)
-            t_e("Previous TOD in domain #{domain} was not configured as expected.  seconds = #{seconds}  prev_ts[seconds] = #{prev_ts["seconds"]}")
+        if (prev_ts["seconds"] != seconds) || (prev_ts["nanoseconds"] != 0)
+            t_e("Previous TOD in domain #{domain} was not configured as expected.  seconds = #{seconds}  seconds = #{prev_ts["seconds"]}  nanoseconds = #{prev_ts["nanoseconds"]}")
         end
     end
 
@@ -184,7 +187,18 @@ def tod_domain_test(domain, seconds)
     frame_tx(frametx, $npi_port, framerx , " ", " ", " ")
     end
 
+    if ($loop_port0 == nil)
+        return
+    end
+
     test "Inject SYNC into NPI port to be transmitted on loop0 port and receive SYNC frame from NPI port" do
+    conf = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port0)
+    conf["domain"] = domain
+    $ts.dut.call("mesa_ts_operation_mode_set", $loop_port0, conf)
+    conf = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port1)
+    conf["domain"] = domain
+    $ts.dut.call("mesa_ts_operation_mode_set", $loop_port1, conf)
+
     # Update default ingress and egress latency in the API. This is based on register values potentially different after link up
     # Delay after call to mesa_ts_status_change should be smaller as the default delay (that is added) is calculated internally in the API
     # This is only the case the first run of the test after boot as this default delay is remembered in the API
@@ -260,7 +274,6 @@ def tod_domain_test(domain, seconds)
             max = -200+75   #External PHY
         end
     end
-
     if (diff > max)
         t_e("Difference between TX TC and RX TC is unexpected high.  max: #{max}")
     end
@@ -280,26 +293,19 @@ test "test_conf" do
     $ts.dut.call("mesa_vlan_port_members_set", 1, "")
 
     # CPU queue configuration
-    $packet_rx_conf_restore = $ts.dut.call("mesa_packet_rx_conf_get")
-    conf = $packet_rx_conf_restore.dup
+    conf = $ts.dut.call("mesa_packet_rx_conf_get")
     conf["queue"][$cpu_queue]["npi"]["enable"] = true
     $ts.dut.call("mesa_packet_rx_conf_set", conf)
 
     # NPI port configuration save
-    $npi_conf_restore = $ts.dut.call("mesa_npi_conf_get")
-    conf = $npi_conf_restore.dup
+    conf = $ts.dut.call("mesa_npi_conf_get")
     conf["enable"] = true
     conf["port_no"] = $ts.dut.port_list[$npi_port]
     $ts.dut.call("mesa_npi_conf_set", conf)
 
-    $npi_learn_restore = $ts.dut.call("mesa_learn_port_mode_get", $ts.dut.port_list[$npi_port])
-    conf = $npi_learn_restore.dup
+    conf = $ts.dut.call("mesa_learn_port_mode_get", $ts.dut.port_list[$npi_port])
     conf["automatic"] = false
     $ts.dut.call("mesa_learn_port_mode_set", $ts.dut.port_list[$npi_port], conf)
-
-    $operation_mode_0_restore = $ts.dut.call("mesa_ts_operation_mode_get", $ts.dut.port_list[$port0])
-    $operation_mode_l0_restore = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port0)
-    $operation_mode_l1_restore = $ts.dut.call("mesa_ts_operation_mode_get", $loop_port1)
 
     # CreateMAC address entry to copy frame to CPU
     entry = {
@@ -316,14 +322,11 @@ test "test_conf" do
 
     $ts.dut.run "mesa-cmd Debug Port Polling disable"
 
-    $loop_port0 = $ts.dut.looped_port_list[0]
-    $loop_port1 = $ts.dut.looped_port_list[1]
-
     i = 0
-    while (i < $ts.dut.looped_port_list.length) do
+    while (i < $loop_ports.length) do
         if ((i % 2) != 0)
-            port0 = $ts.dut.looped_port_list[i-1]
-            port1 = $ts.dut.looped_port_list[i]
+            port0 = $loop_ports[i-1]
+            port1 = $loop_ports[i]
             i = i + 1
         else
             i = i + 1
@@ -352,28 +355,4 @@ test "test_run" do
 
     # Test TOD using default domain (0) API. Domain value 3 is a illegal domain indicating default
     tod_domain_test(3, 0)
-end
-
-test "test_clean_up" do
-    # CPU queue configuration restore
-    $ts.dut.call("mesa_packet_rx_conf_set", $packet_rx_conf_restore)
-
-    # NPI port configuration restore
-    $ts.dut.call("mesa_npi_conf_set", $npi_conf_restore)
-
-    $ts.dut.call("mesa_learn_port_mode_set", $ts.dut.port_list[$npi_port], $npi_learn_restore)
-
-    # Remove static mac entries
-    entry = { vid: 1, mac: { addr: [0x00,0x02,0x03,0x04,0x05,0x06] } }
-    $ts.dut.call("mesa_mac_table_del", entry)
-
-    # Operation mode restore
-    $ts.dut.call("mesa_ts_operation_mode_set", $ts.dut.port_list[$port0], $operation_mode_0_restore)
-    $ts.dut.call("mesa_ts_operation_mode_get", $loop_port0, $operation_mode_l0_restore)
-    $ts.dut.call("mesa_ts_operation_mode_get", $loop_port0, $operation_mode_l1_restore)
-
-    # age out any allocated timestamps id's
-    4.times {$ts.dut.call("mesa_timestamp_age")}
-
-    $ts.dut.run "mesa-cmd Debug Port Polling enable"
 end

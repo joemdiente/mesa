@@ -18,7 +18,7 @@
 #include "../jaguar2/vtss_jaguar2.h"
 #endif
 
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #include "../fa/vtss_fa.h"
 #endif
 
@@ -196,118 +196,20 @@ vtss_rc vtss_inst_get(const vtss_target_type_t target,
     return VTSS_RC_OK;
 }
 
-/* Initialize state to default values */
-static vtss_rc vtss_inst_default_set(vtss_state_t *vtss_state)
+static vtss_rc vtss_ail_create(vtss_state_t *vtss_state, BOOL create_pre)
 {
-    VTSS_D("enter");
+    vtss_state->create_pre = create_pre;
 
-    vtss_state->port_count = VTSS_PORTS;
-
+    if (create_pre) {
+        // General default constants
+        vtss_state->port_count = VTSS_PORTS;
 #if defined(VTSS_FEATURE_SYNCE)
-    {
-        u32               i;
-        for (i=0; i<VTSS_SYNCE_CLK_PORT_ARRAY_SIZE; i++) {
+        u32 i;
+        for (i = 0; i < VTSS_SYNCE_CLK_PORT_ARRAY_SIZE; i++) {
             vtss_state->synce.old_port_no[i] = 0xFFFFFFFF;
         }
-    }
 #endif /* VTSS_FEATURE_SYNCE*/
-
-    VTSS_D("exit");
-    return VTSS_RC_OK;
-}
-
-vtss_rc vtss_inst_create(const vtss_inst_create_t *const create,
-                         vtss_inst_t              *const inst)
-{
-    vtss_state_t *vtss_state;
-    vtss_arch_t  arch;
-
-    VTSS_D("enter, sizeof(*vtss_state): %zu", sizeof(*vtss_state));
-
-    if ((vtss_state = VTSS_OS_MALLOC(sizeof(*vtss_state), VTSS_MEM_FLAGS_NONE)) == NULL)
-        return VTSS_RC_ERROR;
-
-    VTSS_MEMSET(vtss_state, 0, sizeof(*vtss_state));
-    vtss_state->cookie = VTSS_STATE_COOKIE;
-    vtss_state->create = *create;
-    vtss_state->chip_count = 1;
-
-    switch (create->target) {
-#if defined(VTSS_ARCH_OCELOT)
-    case VTSS_TARGET_7511:
-    case VTSS_TARGET_7512:
-    case VTSS_TARGET_7513:
-    case VTSS_TARGET_7514:
-        arch = VTSS_ARCH_SRVL;
-        VTSS_RC(vtss_serval_inst_create(vtss_state));
-        break;
-#endif /* VTSS_ARCH_OCELOT */
-#if defined(VTSS_ARCH_LUTON26)
-    case VTSS_TARGET_SPARX_III_10_UM:
-    case VTSS_TARGET_SPARX_III_17_UM:
-    case VTSS_TARGET_SPARX_III_25_UM:
-    case VTSS_TARGET_SPARX_III_10:
-    case VTSS_TARGET_SPARX_III_18:
-    case VTSS_TARGET_SPARX_III_24:
-    case VTSS_TARGET_SPARX_III_26:
-    case VTSS_TARGET_SPARX_III_10_01:
-    case VTSS_TARGET_CARACAL_LITE:
-    case VTSS_TARGET_CARACAL_1:
-    case VTSS_TARGET_CARACAL_2:
-        arch = VTSS_ARCH_L26;
-        VTSS_RC(vtss_luton26_inst_create(vtss_state));
-        break;
-#endif /* VTSS_ARCH_LUTON26 */
-#if defined(VTSS_ARCH_JAGUAR_2)
-    case VTSS_TARGET_SERVAL_T:
-    case VTSS_TARGET_SERVAL_TP:
-    case VTSS_TARGET_SERVAL_TE:
-    case VTSS_TARGET_SERVAL_TEP:
-    case VTSS_TARGET_SERVAL_2_LITE:
-    case VTSS_TARGET_SERVAL_TE10:
-    case VTSS_TARGET_SPARX_IV_34:
-    case VTSS_TARGET_SERVAL_2:
-    case VTSS_TARGET_LYNX_2:
-    case VTSS_TARGET_JAGUAR_2:
-    case VTSS_TARGET_SPARX_IV_44:
-    case VTSS_TARGET_SPARX_IV_52:
-    case VTSS_TARGET_SPARX_IV_80:
-    case VTSS_TARGET_SPARX_IV_90:
-        arch = VTSS_ARCH_JR2;
-        VTSS_RC(vtss_jaguar2_inst_create(vtss_state));
-        break;
-#endif /* VTSS_ARCH_JAGUAR_2 */
-#if defined(VTSS_ARCH_SPARX5)
-    case VTSS_TARGET_7546:
-    case VTSS_TARGET_7549:
-    case VTSS_TARGET_7552:
-    case VTSS_TARGET_7556:
-    case VTSS_TARGET_7558:
-    case VTSS_TARGET_7546TSN:
-    case VTSS_TARGET_7549TSN:
-    case VTSS_TARGET_7552TSN:
-    case VTSS_TARGET_7556TSN:
-    case VTSS_TARGET_7558TSN:
-        arch = VTSS_ARCH_ANT;
-        VTSS_RC(vtss_fa_inst_create(vtss_state));
-        break;
-#endif /* VTSS_ARCH_SPARX5 */
-#if defined(VTSS_ARCH_LAN966X)
-    case VTSS_TARGET_LAN9662:
-    case VTSS_TARGET_LAN9668:
-        arch = VTSS_ARCH_LAN_966X;
-        VTSS_RC(vtss_lan966x_inst_create(vtss_state));
-        break;
-#endif
-    default:
-        VTSS_E("unknown target: 0x%05x", create->target);
-        return VTSS_RC_ERROR;
     }
-
-    vtss_state->arch = arch;
-
-    /* Set default configuration */
-    VTSS_RC(vtss_inst_default_set(vtss_state));
 
 #if defined(VTSS_FEATURE_MISC)
     VTSS_RC(vtss_misc_inst_create(vtss_state));
@@ -353,6 +255,117 @@ vtss_rc vtss_inst_create(const vtss_inst_create_t *const create,
     VTSS_RC(vtss_ts_inst_create(vtss_state));
 #endif /* VTSS_FEATURE_TIMESTAMP */
 
+    return VTSS_RC_OK;
+}
+
+vtss_rc vtss_inst_create(const vtss_inst_create_t *const create,
+                         vtss_inst_t              *const inst)
+{
+    vtss_state_t *vtss_state;
+    vtss_arch_t  arch;
+    VTSS_D("enter, sizeof(*vtss_state): %zu", sizeof(*vtss_state));
+
+    if ((vtss_state = VTSS_OS_MALLOC(sizeof(*vtss_state), VTSS_MEM_FLAGS_NONE)) == NULL)
+        return VTSS_RC_ERROR;
+
+    VTSS_MEMSET(vtss_state, 0, sizeof(*vtss_state));
+    vtss_state->cookie = VTSS_STATE_COOKIE;
+    vtss_state->create = *create;
+    vtss_state->chip_count = 1;
+
+    // Create AIL, preprocessing
+    VTSS_RC(vtss_ail_create(vtss_state, 1));
+
+    // Create CIL
+    switch (create->target) {
+#if defined(VTSS_ARCH_OCELOT)
+    case VTSS_TARGET_7511:
+    case VTSS_TARGET_7512:
+    case VTSS_TARGET_7513:
+    case VTSS_TARGET_7514:
+        arch = VTSS_ARCH_SRVL;
+        VTSS_RC(vtss_serval_inst_create(vtss_state));
+        break;
+#endif /* VTSS_ARCH_OCELOT */
+#if defined(VTSS_ARCH_LUTON26)
+    case VTSS_TARGET_SPARX_III_10_UM:
+    case VTSS_TARGET_SPARX_III_17_UM:
+    case VTSS_TARGET_SPARX_III_25_UM:
+    case VTSS_TARGET_SPARX_III_10:
+    case VTSS_TARGET_SPARX_III_18:
+    case VTSS_TARGET_SPARX_III_24:
+    case VTSS_TARGET_SPARX_III_26:
+    case VTSS_TARGET_SPARX_III_10_01:
+    case VTSS_TARGET_CARACAL_LITE:
+    case VTSS_TARGET_CARACAL_1:
+    case VTSS_TARGET_CARACAL_2:
+        arch = VTSS_ARCH_L26;
+        VTSS_RC(vtss_luton26_inst_create(vtss_state));
+        break;
+#endif /* VTSS_ARCH_LUTON26 */
+#if defined(VTSS_ARCH_JAGUAR_2)
+    case VTSS_TARGET_SERVAL_T:
+    case VTSS_TARGET_SERVAL_TP:
+    case VTSS_TARGET_SERVAL_TE:
+    case VTSS_TARGET_SERVAL_TEP:
+    case VTSS_TARGET_SERVAL_2_LITE:
+    case VTSS_TARGET_SERVAL_TE10:
+    case VTSS_TARGET_SPARX_IV_34:
+    case VTSS_TARGET_SERVAL_2:
+    case VTSS_TARGET_LYNX_2:
+    case VTSS_TARGET_JAGUAR_2:
+    case VTSS_TARGET_SPARX_IV_44:
+    case VTSS_TARGET_SPARX_IV_52:
+    case VTSS_TARGET_SPARX_IV_80:
+    case VTSS_TARGET_SPARX_IV_90:
+        arch = VTSS_ARCH_JR2;
+        VTSS_RC(vtss_jaguar2_inst_create(vtss_state));
+        break;
+#endif /* VTSS_ARCH_JAGUAR_2 */
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+    case VTSS_TARGET_7546:
+    case VTSS_TARGET_7549:
+    case VTSS_TARGET_7552:
+    case VTSS_TARGET_7556:
+    case VTSS_TARGET_7558:
+    case VTSS_TARGET_7546TSN:
+    case VTSS_TARGET_7549TSN:
+    case VTSS_TARGET_7552TSN:
+    case VTSS_TARGET_7556TSN:
+    case VTSS_TARGET_7558TSN:
+    case VTSS_TARGET_LAN9694RED:
+    case VTSS_TARGET_LAN9694TSN:
+    case VTSS_TARGET_LAN9691VAO:
+    case VTSS_TARGET_LAN9694:
+    case VTSS_TARGET_LAN9696RED:
+    case VTSS_TARGET_LAN9696TSN:
+    case VTSS_TARGET_LAN9692VAO:
+    case VTSS_TARGET_LAN9696:
+    case VTSS_TARGET_LAN9698RED:
+    case VTSS_TARGET_LAN9698TSN:
+    case VTSS_TARGET_LAN9693VAO:
+    case VTSS_TARGET_LAN9698:
+        arch = VTSS_ARCH_ANT;
+        VTSS_RC(vtss_fa_inst_create(vtss_state));
+        break;
+#endif /* VTSS_ARCH_SPARX5 */
+#if defined(VTSS_ARCH_LAN966X)
+    case VTSS_TARGET_LAN9662:
+    case VTSS_TARGET_LAN9668:
+        arch = VTSS_ARCH_LAN_966X;
+        VTSS_RC(vtss_lan966x_inst_create(vtss_state));
+        break;
+#endif
+    default:
+        VTSS_E("unknown target: 0x%05x", create->target);
+        return VTSS_RC_ERROR;
+    }
+
+    vtss_state->arch = arch;
+
+    // Create AIL, postprocessing
+    VTSS_RC(vtss_ail_create(vtss_state, 0));
+
     /* Setup default instance */
     if (vtss_default_inst == NULL)
         vtss_default_inst = vtss_state;
@@ -365,6 +378,7 @@ vtss_rc vtss_inst_create(const vtss_inst_create_t *const create,
 
     return VTSS_RC_OK;
 }
+
 
 vtss_rc vtss_inst_destroy(const vtss_inst_t inst)
 {
@@ -404,15 +418,17 @@ vtss_rc vtss_init_conf_set(const vtss_inst_t              inst,
     vtss_state_t *vtss_state;
     vtss_rc      rc;
 
+    VTSS_PROF_ENTER(LM_PROF_ID_MESA_INIT, 0);
     VTSS_D("enter");
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
         vtss_state->init_conf = *conf;
-        rc = VTSS_FUNC_0(cil.init_conf_set);
+        rc = vtss_cil_init_conf_set(vtss_state);
         vtss_state->warm_start_prev = vtss_state->warm_start_cur;
     } else {
         VTSS_E("Initialization check failed");
     }
     VTSS_D("exit");
+    VTSS_PROF_EXIT(LM_PROF_ID_MESA_INIT, 0);
 
     return rc;
 }
@@ -583,7 +599,7 @@ const char *vtss_port_if_txt(vtss_port_interface_t if_type)
     case VTSS_PORT_INTERFACE_QSGMII:        return "QSGMII";
     case VTSS_PORT_INTERFACE_SFI:           return "SFI";
     case VTSS_PORT_INTERFACE_USGMII:        return "USGMII";
-    case VTSS_PORT_INTERFACE_SXGMII:        return "SXGMII";
+    case VTSS_PORT_INTERFACE_USXGMII:       return "USXGMII";
     case VTSS_PORT_INTERFACE_QXGMII:        return "USX_QXGMII";
     case VTSS_PORT_INTERFACE_DXGMII_10G:    return "DXGMII_10G";
     case VTSS_PORT_INTERFACE_DXGMII_5G:     return "DXGMII_5G";
@@ -715,7 +731,7 @@ vtss_rc vtss_synce_clock_out_set(const vtss_inst_t              inst,
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
         if (clk_port < VTSS_SYNCE_CLK_MAX) {
             vtss_state->synce.out_conf[clk_port] = *conf;
-            rc = VTSS_FUNC_COLD(synce.clock_out_set, clk_port);
+            rc = vtss_cil_synce_clock_out_set(vtss_state, clk_port);
         }
         else    rc = VTSS_RC_ERROR;
     }
@@ -755,7 +771,7 @@ vtss_rc vtss_synce_clock_in_set(const vtss_inst_t              inst,
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
         if (clk_port < VTSS_SYNCE_CLK_MAX) {
             vtss_state->synce.in_conf[clk_port] = *conf;
-            rc = VTSS_FUNC_COLD(synce.clock_in_set, clk_port);
+            rc = vtss_cil_synce_clock_in_set(vtss_state, clk_port);
         } else {
             rc = VTSS_RC_ERROR;
         }
@@ -796,7 +812,7 @@ vtss_rc vtss_synce_synce_station_clk_out_set(const vtss_inst_t              inst
     if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
         if (clk_port < VTSS_SYNCE_CLK_MAX) {
             vtss_state->synce.station_clk_out_conf[clk_port] = *conf;
-            rc = VTSS_FUNC_COLD(synce.station_clk_out_set, clk_port);
+            rc = vtss_cil_synce_station_clk_out_set(vtss_state, clk_port);
         }
         else    rc = VTSS_RC_ERROR;
     }
@@ -856,7 +872,7 @@ static vtss_rc vtss_restart_cur_set(vtss_state_t *vtss_state, const vtss_restart
     vtss_rc rc = VTSS_RC_OK;
 
     vtss_state->restart_cur = restart;
-    rc = VTSS_FUNC_0(cil.restart_conf_set);
+    rc = vtss_cil_restart_conf_set(vtss_state);
     return rc;
 }
 

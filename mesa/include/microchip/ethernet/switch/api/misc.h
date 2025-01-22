@@ -144,6 +144,7 @@ typedef enum {
     MESA_DEBUG_GROUP_ERPS,      // ERPS
     MESA_DEBUG_GROUP_EPS,       // EPS
     MESA_DEBUG_GROUP_SR,        // Seamless Redundancy
+    MESA_DEBUG_GROUP_REDBOX,    // RedBox
     MESA_DEBUG_GROUP_PACKET,    // Packet control
     MESA_DEBUG_GROUP_FDMA,      // Obsoleted
     MESA_DEBUG_GROUP_TS,        // TS: TimeStamping
@@ -300,6 +301,8 @@ typedef enum {
     MESA_PTP_PIN_1_SYNC_EV =(1 << 6), // PTP External pin 1 synchronization (Jaguar2 only)
     MESA_PTP_PIN_2_SYNC_EV =(1 << 7), // PTP External pin 2 synchronization (Jaguar2 only)
     MESA_PTP_PIN_3_SYNC_EV =(1 << 8), // PTP External pin 3 synchronization (Jaguar2 only)
+    MESA_PTP_PIN_4_SYNC_EV =(1 << 9), // PTP External pin 4 synchronization (Laguna)
+    MESA_PTP_PIN_5_SYNC_EV =(1 << 10),// PTP External pin 5 synchronization (Laguna)
 } mesa_ptp_event_type_t;
 
 // PTP polling function called at by interrupt or periodicly
@@ -435,7 +438,10 @@ typedef enum {
     MESA_GPIO_FUNC_PTP_1,   // PTP 1 GPIO functionality
     MESA_GPIO_FUNC_PTP_2,   // PTP 2 GPIO functionality
     MESA_GPIO_FUNC_PTP_3,   // PTP 3 GPIO functionality
-    MESA_GPIO_FUNC_PTP_4    // PTP 4 GPIO functionality
+    MESA_GPIO_FUNC_PTP_4,   // PTP 4 GPIO functionality
+    MESA_GPIO_FUNC_PTP_5,   // PTP 5 GPIO functionality
+    MESA_GPIO_FUNC_PTP_6,   // PTP 6 GPIO functionality
+    MESA_GPIO_FUNC_PTP_7    // PTP 7 GPIO functionality
 } mesa_gpio_func_t;
 
 // GPIO functionality ALT mode
@@ -443,7 +449,8 @@ typedef enum
 {
     MESA_GPIO_FUNC_ALT_0,  // Alternate function 0
     MESA_GPIO_FUNC_ALT_1,  // Alternate function 1
-    MESA_GPIO_FUNC_ALT_2  // Alternate function 2
+    MESA_GPIO_FUNC_ALT_2,  // Alternate function 2
+    MESA_GPIO_FUNC_ALT_3,  // Alternate function 3
 } mesa_gpio_func_alt_t;
 
 // GPIO functionality information
@@ -688,6 +695,23 @@ mesa_rc  mesa_irq_enable(const mesa_inst_t inst,
                          mesa_bool_t enable)
     CAP(MISC_IRQ_CONTROL);
 
+
+// MDIO controller
+typedef struct
+{
+    uint32_t    miim_freq; // Frequency of the MDIO bus in hz
+} mesa_mdio_conf_t;
+
+// Configure MDIO controller
+// param inst     [IN] Target instance reference.
+// param ctrl_id  [IN] Controller instance id
+// param conf     [IN] MDIO configuration
+// return Return code.
+mesa_rc mesa_mdio_conf_set(const mesa_inst_t inst,
+                           const uint8_t ctrl_id,
+                           const mesa_mdio_conf_t *const conf);
+
+
 /* - API tod functions -------------------------------------- */
 
 // Get the current hw nanosec time
@@ -725,13 +749,13 @@ typedef struct {
 // enable [IN]       Set to true if sensor shall be active else false
 mesa_rc mesa_temp_sensor_init(const mesa_inst_t inst,
                               const mesa_bool_t enable)
-    CAP(MISC_FAN);
+    CAP(MISC_TEMP_SENSOR);
 
 // Read temperature sensor value
 // temperature [OUT]      Temperature from sensor (range from -46 to 135 degC)
 mesa_rc mesa_temp_sensor_get(const mesa_inst_t     inst,
                              int16_t               *temperature)
-    CAP(MISC_FAN);
+    CAP(MISC_TEMP_SENSOR);
 
 // FAN PWM frequency
 typedef enum
@@ -821,6 +845,7 @@ typedef struct
     uint32_t     ptp_pin_ppso;           // PTP_IO pin used for RS422 1 PPS output
     uint32_t     ptp_rs422_pps_int_id;   // Interrupt id for RS422 1PPS interrupt
     uint32_t     ptp_rs422_ldsv_int_id;  // Interrupt id for RS422 Load/Save input interrupt
+    const char   *serial_port;           // The serial port used for RS422 (default ttyS1)
 } meba_ptp_rs422_conf_t CAP(TS_PTP_RS422);
 
 /* - Symreg ----------------------------------------------------------------- */
@@ -864,6 +889,61 @@ typedef struct {
 // data       [OUT] data
 mesa_rc mesa_symreg_data_get(const mesa_inst_t   inst,
                              mesa_symreg_data_t *const data);
+
+typedef enum {
+    MESA_VSCOPE_FAST_SCAN,
+    MESA_VSCOPE_FULL_SCAN,
+} mesa_vscope_scan_t CAP(VSCOPE);
+
+typedef struct {
+    mesa_vscope_scan_t scan_type; // selects the type of scan to be implemented */
+    mesa_bool_t enable;           // enable or disable vscope fast scan*/
+    uint32_t    error_thres;      // error_threshold for vscope calculations */
+} mesa_vscope_conf_t CAP(VSCOPE);
+
+mesa_rc mesa_vscope_conf_set(const mesa_inst_t inst,
+                             const mesa_port_no_t port_no,
+                             const mesa_vscope_conf_t *const conf) CAP(VSCOPE);
+
+mesa_rc mesa_vscope_conf_get(const mesa_inst_t inst,
+                             const mesa_port_no_t port_no,
+                             mesa_vscope_conf_t *const conf) CAP(VSCOPE);
+
+#define VSCOPE_BOOLEAN_STORAGE_COUNT  6    // BOOL parameters to be stored during Vscope Scan */
+#define VSCOPE_UNSIGNED_STORAGE_COUNT 5    // UNSIGNED parameters to be stored during Vscope Scan */
+
+typedef struct {
+    mesa_bool_t ib_storage_bool[VSCOPE_BOOLEAN_STORAGE_COUNT];    // boolean values to be stored in vtss_state during vscope fast scan configuration */
+    uint32_t    ib_storage[VSCOPE_UNSIGNED_STORAGE_COUNT];        // u8 values to be stored in vtss_state during vscope fast scan configuration */
+} mesa_vscope_ib_storage_t CAP(VSCOPE);
+
+/**\brief VSCOPE scan configuration */
+typedef struct{
+    mesa_bool_t line;    // selects line or host side, 1 for line */
+    uint32_t x_start;    // start value for x (0-127)*/
+    uint32_t y_start;    // start value for y (0-63)*/
+    uint32_t x_incr;     // increment value for x during the scan */
+    uint32_t y_incr;     // increment value for y during the scan */
+    uint32_t x_count;    // max value for x ( upto which scan is to be performed) */
+    uint32_t y_count;    // max value for y ( upto which scan is to be performed) */
+    uint32_t ber;        // bit error rate */
+} mesa_vscope_scan_conf_t CAP(VSCOPE);
+
+#define PHASE_POINTS 128 // phase points range from 0-127 */
+#define AMPLITUDE_POINTS 64 // amplitude points range from 0-63 */
+
+/**\ brief Vscope eye scan status*/
+typedef struct {
+    mesa_vscope_scan_conf_t scan_conf; // scan configuration data */
+    int32_t  error_free_x;  // error free x values in case of fast eye scan */
+    int32_t  error_free_y;  // error free y values in case of fast eye scan */
+    int32_t  amp_range;     // amp range in case of fast eye scan */
+    uint32_t errors[PHASE_POINTS][AMPLITUDE_POINTS]; // error matrix in full scan mode */
+} mesa_vscope_scan_status_t CAP(VSCOPE);
+
+mesa_rc mesa_vscope_scan_status_get(const mesa_inst_t inst,
+                                    const mesa_port_no_t port_no,
+                                    mesa_vscope_scan_status_t *const conf) CAP(VSCOPE);
 
 #include <microchip/ethernet/hdr_end.h>
 #endif // _MICROCHIP_ETHERNET_SWITCH_API_MISC_

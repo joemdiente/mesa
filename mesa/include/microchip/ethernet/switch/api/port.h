@@ -18,6 +18,7 @@ typedef enum
     MESA_BW_5G,          // Max 5G
     MESA_BW_10G,         // Max 10G
     MESA_BW_25G,         // Max 25G
+    MESA_BW_NONE,        // No BW assigned
     MESA_BW_UNDEFINED,   // Undefined
 } mesa_internal_bw_t;
 
@@ -38,6 +39,14 @@ typedef struct
     uint32_t               bit;    // SGPIO bit (0-3)
 } mesa_port_sgpio_map_t;
 
+// Signal detect mapping to GPIO SD */
+typedef struct
+{
+    mesa_bool_t enable;// Enable gpio to dev mapping for this dev
+    uint8_t sfp_sd;    // SFP_SD<id> id, see GPIO ALT modes for chip
+} mesa_gpio_sd_map_t;
+
+
 // Signifies an unused chip port
 #define CHIP_PORT_UNUSED -1
 
@@ -51,6 +60,7 @@ typedef struct
     uint8_t                miim_addr;             // PHY address, ignored for MESA_MIIM_CONTROLLER_NONE
     mesa_chip_no_t         miim_chip_no;          // MII management chip number, multi-chip targets
     mesa_port_sgpio_map_t  sd_map CAP(SGPIO_MAP); // PCS signal detect to SGPIO bit map
+    mesa_gpio_sd_map_t     sd_gpio_map CAP(GPIO_MAP); // PCS signal detect to GPIO SD map
 } mesa_port_map_t;
 
 // Set port map.
@@ -234,6 +244,26 @@ mesa_rc mesa_port_conf_get(const mesa_inst_t     inst,
 mesa_rc mesa_port_status_get(const mesa_inst_t     inst,
                              const mesa_port_no_t  port_no,
                              mesa_port_status_t    *const status);
+
+// Port bulk config state
+typedef enum
+{
+    MESA_PORT_BULK_DISABLED, /**< Port bulk set disabled */
+    MESA_PORT_BULK_ENABLED,  /**< Port conf written to internal state only */
+    MESA_PORT_BULK_APPLY,    /**< Port internal state applied to hardware */
+} mesa_port_bulk_t CAP(PORT_CONF_BULK);
+
+
+// Set port bulk state
+// Used when configuring multiple ports to the same config, speeds up the config.
+// 1. Enable bulk state
+// 2. Configure ports in normal manner (configuration is not applied to HW)
+// 3. Apply bulk state (configuration is applied to HW)
+// bulk [IN]  bulk state (disable/enabled/apply)
+mesa_rc mesa_port_conf_bulk_set(const mesa_inst_t      inst,
+                                const mesa_port_bulk_t bulk)
+    CAP(PORT_CONF_BULK);
+
 
 /******************************************************************************/
 /* Port Counters                                                              */
@@ -634,6 +664,7 @@ typedef struct {
     mesa_bool_t use_ber_cnt CAP(PORT_KR_IRQ);  // Use BER count instead of eye height
     mesa_bool_t test_mode   CAP(PORT_KR_IRQ);  // Debug only
     uint32_t test_repeat    CAP(PORT_KR_IRQ);  // Debug only
+    mesa_bool_t pcs_flap    CAP(PORT_KR_IRQ);  // mesa-837
 } mesa_port_kr_train_t      CAP(PORT_KR);
 
 // KR configuration structures
@@ -669,6 +700,8 @@ mesa_rc mesa_port_kr_status_get(const mesa_inst_t inst,
     CAP(PORT_KR);
 
 #define MESA_KR_AN_RATE         (0xF)
+#define MESA_KR_NP_REQ          (1 << 31)
+#define MESA_KR_ACK_FINISH      (1 << 30)
 #define MESA_KR_ACTV            (1 << 29)
 #define MESA_KR_LPSVALID        (1 << 28)
 #define MESA_KR_LPCVALID        (1 << 27)

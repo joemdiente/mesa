@@ -10,11 +10,15 @@ $ts = get_test_setup("mesa_pc_b2b_2x")
 
 check_capabilities do
     $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
-    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")),
-           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5). or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x).")
+    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")),
+           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")} (Lan969x)")
     assert(($ts.ts_external_clock_looped == true),
            "External clock must be looped")
     $cap_epid = $ts.dut.call("mesa_capability", "MESA_CAP_PACKET_IFH_EPID")
+    $cap_fpga = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_FPGA")
 end
 
 $pcb = $ts.dut.pcb
@@ -24,6 +28,10 @@ $external_io_out = 1
 $diff_high = 2
 $diff_low = 2
 
+if ($pcb == "6849-Sunrise")
+    $diff_high = 8
+    $diff_low = 5
+end
 if ($pcb == "8291-EndNode")
     $external_io_in = 4
     $diff_high = 2
@@ -48,6 +56,11 @@ if ($pcb == "6813-Adaro")
     $diff_high = 10
     $diff_low = 10
 end
+if ($pcb == "8398")
+    $external_io_in = 5
+    $external_io_out = 4
+end
+
 t_i "$external_io_out #{$external_io_out} $external_io_in #{$external_io_in}"
 
 def tod_external_io_1pps_test
@@ -81,11 +94,13 @@ def tod_external_io_1pps_test
 
         sleep(1.6)
 
-        t_i("Get TOD on 1PPS input pin again to check not incremented")
-        pin = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
-        pin_ts2 = pin[0]
-        if (pin_ts1["seconds"] != pin_ts2["seconds"])
-            t_e("Case 1PPS is not enabled. TOD in domain #{domain} was not as expected.  pin_ts1[seconds] = #{pin_ts1["seconds"]}  pin_ts2[seconds] = #{pin_ts2["seconds"]}")
+        if (!$cap_fpga) # On the Laguna FPGA it seems that the GPIO output is unstable when 1PPS is disabled
+            t_i("Get TOD on 1PPS input pin again to check not incremented")
+            pin = $ts.dut.call("mesa_ts_saved_timeofday_get", $external_io_in)
+            pin_ts2 = pin[0]
+            if (pin_ts1["seconds"] != pin_ts2["seconds"])
+                t_e("Case 1PPS is not enabled. TOD in domain #{domain} was not as expected.  pin_ts1[seconds] = #{pin_ts1["seconds"]}  pin_ts2[seconds] = #{pin_ts2["seconds"]}")
+            end
         end
 
         t_i("Configure 1PPS output pin to this domain")
@@ -195,7 +210,7 @@ def tod_external_io_1pps_tod_offset_test
 
     diff = ts2["nanoseconds"] - ts1["nanoseconds"]
     t_i("Difference #{diff} in TOD nanoseconds must be approx 0")
-    if ((diff > 1) || (diff < -$diff_low))
+    if ((diff > $diff_high) || (diff < -$diff_low))
         t_e("Difference is not as expected")
     end
     end

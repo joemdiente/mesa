@@ -166,6 +166,37 @@ BOOL vtss_timestampLarger(const vtss_timestamp_t *ts1, const vtss_timestamp_t *t
     return FALSE;
 }
 
+// TSN global configuration
+vtss_rc vtss_ts_conf_set(const vtss_inst_t           inst,
+                         const vtss_ts_conf_t *const conf)
+{
+    vtss_state_t *vtss_state;
+    vtss_rc      rc;
+
+    VTSS_ENTER();
+    if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
+        vtss_state->ts.conf.tsn_domain = conf->tsn_domain;
+        rc = vtss_cil_ts_conf_set(vtss_state, conf);
+    }
+    VTSS_EXIT();
+    return rc;
+}
+
+vtss_rc vtss_ts_conf_get(const vtss_inst_t  inst,
+                         vtss_ts_conf_t    *const conf)
+{
+    vtss_state_t *vtss_state;
+    vtss_rc      rc;
+
+    VTSS_ENTER();
+    if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
+        conf->tsn_domain = vtss_state->ts.conf.tsn_domain;
+    }
+    VTSS_EXIT();
+    return rc;
+}
+
+
 /* Get the current time in a Timestamp format, and the corresponding time counter */
 vtss_rc vtss_ts_timeofday_get(const vtss_inst_t             inst,
                               vtss_timestamp_t              *const ts,
@@ -224,6 +255,28 @@ vtss_rc vtss_ts_domain_timeofday_get(const vtss_inst_t             inst,
 
     VTSS_ENTER();
     rc = _vtss_ts_domain_timeofday_get(inst, domain, ts, tc);
+    VTSS_EXIT();
+
+    return rc;
+}
+
+/* Get the current time in timestamp format from multiple clock domains simultaneously. */
+vtss_rc vtss_ts_multi_domain_timeofday_get(const vtss_inst_t inst,
+                                           const uint32_t    domain_cnt,
+                                           vtss_timestamp_t  *const ts)
+{
+    vtss_state_t *vtss_state;
+    vtss_rc      rc;
+
+    if (domain_cnt > VTSS_TS_DOMAIN_ARRAY_SIZE) {
+        VTSS_I("API not supported for reading clock domains more than %d", VTSS_TS_DOMAIN_ARRAY_SIZE);
+        return VTSS_RC_ERROR;
+    }
+
+    VTSS_ENTER();
+    if ((rc = vtss_inst_check(inst, &vtss_state)) == VTSS_RC_OK) {
+        rc = VTSS_FUNC(ts.multi_domain_timeofday_get, domain_cnt, ts);
+    }
     VTSS_EXIT();
 
     return rc;
@@ -543,7 +596,7 @@ vtss_rc vtss_ts_external_clock_saved_get(
 }
 
 
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
 vtss_rc vtss_ts_alt_clock_saved_get(
     const vtss_inst_t           inst,
     u64    *const               saved)
@@ -624,8 +677,7 @@ vtss_rc vtss_ts_timeofday_next_pps_set(const vtss_inst_t       inst,
 }
 
 #endif /* defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) */
-
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LUTON26) || defined(VTSS_ARCH_OCELOT)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X) || defined(VTSS_ARCH_LUTON26) || defined(VTSS_ARCH_OCELOT)
 /*
  * Get the external io mode.
  */
@@ -855,15 +907,15 @@ vtss_rc vtss_ts_operation_mode_set(const vtss_inst_t              inst,
 
     VTSS_ENTER();
     if ((rc = vtss_inst_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
-        if ((mode->domain != vtss_state->ts.port_conf[port_no].mode.domain) ||
-                (mode->mode != vtss_state->ts.port_conf[port_no].mode.mode)) {
-            vtss_state->ts.port_conf[port_no].mode = *mode;
-            rc = VTSS_FUNC_COLD(ts.operation_mode_set,port_no);
-        }
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+        BOOL mode_domain_config;
+        mode_domain_config = ((mode->domain != vtss_state->ts.port_conf[port_no].mode.domain) ||
+                              (mode->mode != vtss_state->ts.port_conf[port_no].mode.mode)) ? TRUE : FALSE;
+        vtss_state->ts.port_conf[port_no].mode = *mode;
+        rc = VTSS_FUNC_COLD(ts.operation_mode_set, port_no, mode_domain_config);
 #else
         vtss_state->ts.port_conf[port_no].mode = *mode;
-        rc = VTSS_FUNC_COLD(ts.operation_mode_set,port_no);
+        rc = VTSS_FUNC_COLD(ts.operation_mode_set, port_no, TRUE);
 #endif
     }
     VTSS_EXIT();
@@ -1349,6 +1401,7 @@ vtss_rc vtss_ts_inst_create(vtss_state_t *vtss_state)
 }
 
 
+#if VTSS_OPT_DEBUG_PRINT
 
 /* - Debug print --------------------------------------------------- */
 
@@ -1366,8 +1419,8 @@ void vtss_ts_debug_print(vtss_state_t *vtss_state,
                          const vtss_debug_printf_t pr,
                          const vtss_debug_info_t   *const info)
 {
-    u32               i,j;
-    vtss_ts_conf_t *ts_conf;
+    u32                i,j;
+    vtss_ts_configs_t *ts_conf;
     vtss_ts_port_conf_t *ts_port_conf;
     vtss_ts_timestamp_status_t *status;
     BOOL first = TRUE;
@@ -1426,6 +1479,6 @@ void vtss_ts_debug_print(vtss_state_t *vtss_state,
     }
     pr("\n");
 }
-
+#endif // VTSS_OPT_DEBUG_PRINT
 #endif /* VTSS_FEATURE_TIMESTAMP */
 

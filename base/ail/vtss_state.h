@@ -119,8 +119,6 @@ extern const char *vtss_func;
 
 /* Target architecture */
 typedef enum {
-    VTSS_ARCH_CU_PHY,  /* Cu PHYs */
-    VTSS_ARCH_10G_PHY, /* 10G PHYs */
     VTSS_ARCH_L26,     /* Luton26 */
     VTSS_ARCH_SRVL,    /* Serval */
     VTSS_ARCH_JR1,     /* Jaguar-1 */
@@ -186,11 +184,6 @@ typedef struct {
 
 #if defined(VTSS_FEATURE_SYNCE)
 typedef struct {
-    /* CIL function pointers */
-    vtss_rc (* clock_out_set)(struct vtss_state_s *vtss_state, const vtss_synce_clk_port_t clk_port);
-    vtss_rc (* clock_in_set)(struct vtss_state_s *vtss_state, const vtss_synce_clk_port_t clk_port);
-    vtss_rc (* station_clk_out_set)(struct vtss_state_s *vtss_state, const vtss_synce_clk_port_t clk_port);
-
     /* Configuration/state */
     u32                    old_port_no[VTSS_SYNCE_CLK_PORT_ARRAY_SIZE];
     vtss_synce_clock_in_t  in_conf[VTSS_SYNCE_CLK_PORT_ARRAY_SIZE];
@@ -198,6 +191,23 @@ typedef struct {
     vtss_synce_station_clock_out_t station_clk_out_conf[VTSS_SYNCE_CLK_PORT_ARRAY_SIZE];
 } vtss_synce_state_t;
 #endif /* VTSS_FEATURE_SYNCE */
+
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+typedef enum {
+    FEATURE_VLAN_COUNTERS,        // VLAN counters are only supported for SMB devices
+    FEATURE_QOS_FRAME_PREEMPTION, // Frame Preemption support (802.1Qbu and 802.3br)
+    FEATURE_SYNCE,                // SYNCE - L1 syncronization feature
+    FEATURE_FRER,                 // IEEE 802.1CB: Frame Replication and Elimination for Reliability
+    FEATURE_PSFP,                 // IEEE 802.1Qci: Per-Stream Filtering and Policing
+    FEATURE_REDBOX,               // PRP/HSR RedBox
+    FEATURE_QOS_OT,               // Operational Technology traffic handling
+    FEATURE_MRP,                  // IEC 62439-2 MRP
+    FEATURE_MRP_V1,               // Version 1 MRP implementation
+    FEATURE_MAC_INDEX_TABLE,      // Index-based MAC address table
+    FEATURE_TIMESTAMP,            // 1588 timestamp feature for PTP
+    FEATURE_LAST
+} vtss_feature_t;
+#endif
 
 /* Opaque forward declaration */
 struct vtss_state_s;
@@ -251,7 +261,7 @@ typedef struct vtss_state_s {
     u32                           chip_count;      /* Number of devices */
     vtss_chip_no_t                chip_no;         /* Currently selected device */
     u32                           port_count;
-
+    BOOL                          create_pre;      // AIL create preprocessing
     /* CIL function pointers not part of a specific group */
     vtss_cil_func_t cil;
 
@@ -331,7 +341,60 @@ typedef struct vtss_state_s {
     char txt_buf[256];  /* General purpose text string buffer */
     int  txt_buf_index; /* Index to text buffer */
     void *app_data;    /**< Application data pointer */
+
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+    BOOL vtss_features[FEATURE_LAST];
+    u32 *reg_group_offset;
+    u32 *reg_group_sz_offset;
+    u32 *reg_target_offset;
+    u32 *reg_unstable_addr;
+    u32 *reg_unstable_flds;
+    u32 *reg_group_cnt;
+    u32 *reg_cnt;
+    u32 *chip_const;
+
+#if defined(VTSS_FEATURE_REDBOX)
+    // This should have been sized by FA_DSM_CAL_MAX_DEVS_PER_TAXI, but that's
+    // not available, so using the RedBox count, which is the same.
+    u32 taxi_delay[VTSS_REDBOX_CNT];
+#endif
+#endif
 } vtss_state_t;
+
+// For checking state size at compile time
+#if 0
+char (*_check_vtss_state)[sizeof(vtss_state_t)] = 1;
+char (*_check_port_state)[sizeof(vtss_port_state_t)] = 1;
+char (*_check_port_counter_state)[(VTSS_PORTS + 1)*sizeof(vtss_port_chip_counters_t)] = 1;
+#if defined(VTSS_FEATURE_PORT_KR_IRQ)
+char (*_check_port_kr_train_state)[VTSS_PORTS*sizeof(vtss_port_kr_state_t)] = 1;
+#endif
+char (*_check_l2_state)[sizeof(vtss_l2_state_t)] = 1;
+char (*_check_l2_vlan_state)[VTSS_VIDS*sizeof(vtss_vlan_entry_t)] = 1;
+char (*_check_l2_mac_state)[VTSS_MAC_ADDRS*sizeof(vtss_mac_entry_t)] = 1;
+char (*_check_l2_pgid_state)[VTSS_PGIDS*sizeof(vtss_pgid_entry_t)] = 1;
+char (*_check_l2_psfp_state)[sizeof(vtss_psfp_state_t)] = 1;
+char (*_check_l2_mstream_state)[VTSS_MSTREAM_CNT*sizeof(vtss_frer_stream_conf_t)] = 1;
+char (*_check_l2_cstream_state)[VTSS_CSTREAM_CNT*sizeof(vtss_frer_stream_conf_t)] = 1;
+char (*_check_l2_mstream_cnt_state)[VTSS_MSTREAM_CNT*sizeof(vtss_frer_chip_counters_t)] = 1;
+char (*_check_l2_cstream_cnt_state)[VTSS_CSTREAM_CNT*sizeof(vtss_frer_chip_counters_t)] = 1;
+char (*_check_l2_sdx)[sizeof(vtss_sdx_info_t)] = 1;
+char (*_check_l3_state)[sizeof(vtss_l3_state_t)] = 1;
+char (*_check_dlb_conf_state)[VTSS_EVC_POL_CNT*sizeof(vtss_dlb_policer_conf_t)] = 1;
+char (*_check_qos_state)[sizeof(vtss_qos_state_t)] = 1;
+char (*_check_qos_port_state)[VTSS_PORTS*sizeof(vtss_qos_port_conf_t)] = 1;
+#if defined(VTSS_FEATURE_QOS_HSCH_LEAK_LISTS)
+char (*_check_qos_leak_state)[sizeof(vtss_qos_leak_conf_t)] = 1;
+#endif
+char (*_check_vcap_state)[sizeof(vtss_vcap_state_t)] = 1;
+#if defined(VTSS_FEATURE_IS1)
+char (*_check_vcap_is1)[sizeof(vtss_is1_info_t)] = 1;
+#endif
+char (*_check_vcap_es0)[sizeof(vtss_es0_info_t)] = 1;
+char (*_check_misc_state)[sizeof(vtss_misc_state_t)] = 1;
+char (*_check_packet_state)[sizeof(vtss_packet_state_t)] = 1;
+char (*_check_ts_state)[sizeof(vtss_ts_state_t)] = 1;
+#endif
 
 /* Check instance */
 vtss_rc vtss_inst_check(const vtss_inst_t inst, vtss_state_t **vtss_state);
@@ -372,8 +435,6 @@ typedef enum {
  *  Trace
  * ================================================================= */
 
-#if VTSS_OPT_TRACE
-
 /*lint -esym(459, vtss_trace_conf) */
 extern vtss_trace_conf_t vtss_trace_conf[];
 
@@ -387,25 +448,38 @@ extern vtss_trace_conf_t vtss_trace_conf[];
 #define VTSS_TRACE_GROUP VTSS_TRACE_GROUP_DEFAULT
 #endif /* VTSS_TRACE_GROUP */
 
+#define VTSS_T(_grp, _lvl, ...) { if (vtss_trace_conf[_grp].level[VTSS_TRACE_LAYER] >= _lvl) vtss_callout_trace_printf(VTSS_TRACE_LAYER, _grp, _lvl, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__); }
+
+#define VTSS_HEX(_grp, _lvl, _byte_p, _byte_cnt) { if (vtss_trace_conf[_grp].level[VTSS_TRACE_LAYER] >= _lvl) vtss_callout_trace_hex_dump(VTSS_TRACE_LAYER, _grp, _lvl, __FILE__, __LINE__, __FUNCTION__, _byte_p, _byte_cnt); }
+
+// Error trace
+#if VTSS_OPT_TRACE_ERROR
 #define VTSS_E(...) VTSS_EG(VTSS_TRACE_GROUP, ##__VA_ARGS__)
+#define VTSS_E_HEX(_byte_p, _byte_cnt) VTSS_EG_HEX(VTSS_TRACE_GROUP, _byte_p, _byte_cnt)
+#define VTSS_EG(_grp, ...) VTSS_T(_grp, VTSS_TRACE_LEVEL_ERROR, __VA_ARGS__)
+#define VTSS_EG_HEX(_grp, _byte_p, _byte_cnt) VTSS_HEX(_grp, VTSS_TRACE_LEVEL_ERROR, _byte_p, _byte_cnt)
+#else
+#define VTSS_E(...)
+#define VTSS_E_HEX(grp, ...)
+#define VTSS_EG(_grp, ...)
+#define VTSS_EG_HEX(_grp, _byte_p, _byte_cnt)
+#endif
+
+// Info/debug/noise trace
+#if VTSS_OPT_TRACE
+
 #define VTSS_I(...) VTSS_IG(VTSS_TRACE_GROUP, ##__VA_ARGS__)
 #define VTSS_D(...) VTSS_DG(VTSS_TRACE_GROUP, ##__VA_ARGS__)
 #define VTSS_N(...) VTSS_NG(VTSS_TRACE_GROUP, ##__VA_ARGS__)
 
-#define VTSS_E_HEX(_byte_p, _byte_cnt) VTSS_EG_HEX(VTSS_TRACE_GROUP, _byte_p, _byte_cnt)
 #define VTSS_I_HEX(_byte_p, _byte_cnt) VTSS_IG_HEX(VTSS_TRACE_GROUP, _byte_p, _byte_cnt)
 #define VTSS_D_HEX(_byte_p, _byte_cnt) VTSS_DG_HEX(VTSS_TRACE_GROUP, _byte_p, _byte_cnt)
 #define VTSS_N_HEX(_byte_p, _byte_cnt) VTSS_NG_HEX(VTSS_TRACE_GROUP, _byte_p, _byte_cnt)
 
-/* For files with multiple trace groups: */
-#define VTSS_T(_grp, _lvl, ...) { if (vtss_trace_conf[_grp].level[VTSS_TRACE_LAYER] >= _lvl) vtss_callout_trace_printf(VTSS_TRACE_LAYER, _grp, _lvl, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__); }
-#define VTSS_EG(_grp, ...) VTSS_T(_grp, VTSS_TRACE_LEVEL_ERROR, __VA_ARGS__)
 #define VTSS_IG(_grp, ...) VTSS_T(_grp, VTSS_TRACE_LEVEL_INFO,  __VA_ARGS__)
 #define VTSS_DG(_grp, ...) VTSS_T(_grp, VTSS_TRACE_LEVEL_DEBUG, __VA_ARGS__)
 #define VTSS_NG(_grp, ...) VTSS_T(_grp, VTSS_TRACE_LEVEL_NOISE, __VA_ARGS__)
 
-#define VTSS_HEX(_grp, _lvl, _byte_p, _byte_cnt) { if (vtss_trace_conf[_grp].level[VTSS_TRACE_LAYER] >= _lvl) vtss_callout_trace_hex_dump(VTSS_TRACE_LAYER, _grp, _lvl, __FILE__, __LINE__, __FUNCTION__, _byte_p, _byte_cnt); }
-#define VTSS_EG_HEX(_grp, _byte_p, _byte_cnt) VTSS_HEX(_grp, VTSS_TRACE_LEVEL_ERROR, _byte_p, _byte_cnt)
 #define VTSS_IG_HEX(_grp, _byte_p, _byte_cnt) VTSS_HEX(_grp, VTSS_TRACE_LEVEL_INFO,  _byte_p, _byte_cnt)
 #define VTSS_DG_HEX(_grp, _byte_p, _byte_cnt) VTSS_HEX(_grp, VTSS_TRACE_LEVEL_DEBUG, _byte_p, _byte_cnt)
 #define VTSS_NG_HEX(_grp, _byte_p, _byte_cnt) VTSS_HEX(_grp, VTSS_TRACE_LEVEL_NOISE, _byte_p, _byte_cnt)
@@ -413,22 +487,18 @@ extern vtss_trace_conf_t vtss_trace_conf[];
 #else /* VTSS_OPT_TRACE */
 
 /* No trace */
-#define VTSS_E(...)
 #define VTSS_I(...)
 #define VTSS_D(...)
 #define VTSS_N(...)
 
-#define VTSS_E_HEX(grp, ...)
 #define VTSS_I_HEX(grp, ...)
 #define VTSS_D_HEX(grp, ...)
 #define VTSS_N_HEX(grp, ...)
 
-#define VTSS_EG(_grp, ...)
 #define VTSS_IG(_grp, ...)
 #define VTSS_DG(_grp, ...)
 #define VTSS_NG(_grp, ...)
 
-#define VTSS_EG_HEX(_grp, _byte_p, _byte_cnt)
 #define VTSS_IG_HEX(_grp, _byte_p, _byte_cnt)
 #define VTSS_DG_HEX(_grp, _byte_p, _byte_cnt)
 #define VTSS_NG_HEX(_grp, _byte_p, _byte_cnt)

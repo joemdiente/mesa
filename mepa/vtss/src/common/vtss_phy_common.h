@@ -31,7 +31,7 @@ ioreg_blk *_ioreg(ioreg_blk *io, u16 dev, BOOL is32, u32 addr);
 
 #define CSR_RD(p, io_reg, value)     \
     {   \
-       vtss_rc __rc = _csr_rd(vtss_state, p, io_reg, value); \
+	vtss_rc __rc = _csr_rd(vtss_state, p, io_reg, value); \
         if (__rc != VTSS_RC_OK)           \
             return __rc;                  \
     }
@@ -162,6 +162,9 @@ vtss_rc vtss_phy_callout_set(const vtss_inst_t inst,
                              const vtss_port_no_t  port_no,
                              const mepa_callout_t    *co,
                              struct mepa_callout_ctx *c);
+
+vtss_rc vtss_phy_callout_del(const vtss_inst_t inst,
+                             const vtss_port_no_t  port_no);
 
 
 #ifdef __cplusplus

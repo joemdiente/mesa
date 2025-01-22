@@ -900,7 +900,7 @@ $options[:input_files].each do |x|
 
         ast = nil
         cache_file = "#{$options[:output_dir]}/#{x}.cache"
-        if File.exists?(cache_file) and File.mtime(cache_file) > File.mtime(x)
+        if File.exist?(cache_file) and File.mtime(cache_file) > File.mtime(x)
             trace "Loading cache #{cache_file}"
             File.open(cache_file, "r"){|f| ast = Marshal.load(f)}
 
@@ -1862,6 +1862,9 @@ $methods.each do |k, v|
                 end
 
                 code_vars_memset << "memset(&#{tmp_name}, 0, sizeof(#{tmp_name}))"
+
+                # If it's an output parameter and a pointer, clear it.
+                code_vars_memset << "memset(#{e[:ast_mesa][:arg_name]}, 0, sizeof(*#{e[:ast_mesa][:arg_name]}))" if e[:ast_mesa][:direction] == :DIR_OUT and e[:ast_mesa][:ptr]
 
                 mesa_conv_arg_access = "&"
                 mesa_conv_arg_access = "" if e[:ast_mesa][:ptr]

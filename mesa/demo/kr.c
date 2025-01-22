@@ -50,6 +50,8 @@ static char *ber2txt(mesa_ber_stage_t st)
 static char *irq2txt(u32 irq)
 {
     switch (irq) {
+    case MESA_KR_NP_REQ:     return  "NP_REQ";
+    case MESA_KR_ACK_FINISH: return  "ACK_FINISH";
     case MESA_KR_ACTV:       return  "KR_ACTV";
     case MESA_KR_LPSVALID:   return  "KR_LPS";
     case MESA_KR_LPCVALID:   return  "KR_LPC";
@@ -258,6 +260,7 @@ typedef struct {
     mesa_bool_t train;
     mesa_bool_t no_rem;
     mesa_bool_t no_pd;
+    mesa_bool_t pcs_flap;
     mesa_bool_t no_eq_apply;
     mesa_bool_t printout;
     mesa_bool_t fec;
@@ -309,6 +312,8 @@ static int cli_parm_keyword(cli_req_t *req)
         mreq->no_rem = 1;
     } else if (!strncasecmp(found, "no-pd", 4)) {
         mreq->no_pd = 1;
+    } else if (!strncasecmp(found, "pcs-flap", 3)) {
+        mreq->pcs_flap = 1;
     } else if (!strncasecmp(found, "no-eq-apply", 4)) {
         mreq->no_eq_apply = 1;
     } else if (!strncasecmp(found, "printout", 4)) {
@@ -444,6 +449,7 @@ static void cli_cmd_port_kr(cli_req_t *req)
                 conf.train.test_mode = mreq->test;
                 conf.train.test_repeat = 10;
                 conf.train.use_ber_cnt = kr_conf_state[iport].use_ber;
+                conf.train.pcs_flap = mreq->pcs_flap;
                 conf.aneg.adv_1g = mreq->adv1g || mreq->all;
                 conf.aneg.adv_2g5 = mreq->adv2g5 || mreq->all;
                 conf.aneg.adv_5g = mreq->adv5g || mreq->all;
@@ -675,8 +681,8 @@ static void kr_dump_tr_eq_history(cli_req_t *req)
             c0 = krs->ld_hist[indx].res.c0;
             dt = krs->ld_hist[indx].time;
             if (first) {
-                cli_printf("%-4s%-12s%-12s%-12s%-12s%-12s%-15s%-8s\n","","TAP","CMD","CM1","Ampl","CP1","Status","Time (ms)");
-                cli_printf("    ----------------------------------------------------------------------\n");
+                cli_printf("%-4s%-12s%-12s%-12s%-12s%-12s%-15s%-8s\n","","TAP","CMD","CM1","C0","CP1","Status","ms since train start");
+                cli_printf("    ---------------------------------------------------------------------------------------------\n");
                 first = FALSE;
             }
             if (!mreq->all && (krs->ld_hist[indx].res.coef == 0)) {
@@ -786,7 +792,7 @@ static void kr_dump_irq_history(cli_req_t *req, mesa_bool_t all)
             }
             dt = krs->irq_hist[indx].time;
             if (first) {
-                cli_printf("%-4s%-10s%-10s%-30s%-22s%-16s%-16s\n","","us","delta","KR IRQs","SM","LP BP ability","LP NP ability");
+                cli_printf("%-4s%-10s%-10s%-40s%-22s%-16s%-16s\n","","us","delta","KR IRQs","SM","LP BP ability","LP NP ability");
                 cli_printf("    -------------------------------------------------------------------------------------------------------\n");
                 first = FALSE;
             }
@@ -829,14 +835,19 @@ static void kr_dump_irq_history(cli_req_t *req, mesa_bool_t all)
                 }
             }
 
-            if (krs->irq_hist[indx].irq & MESA_KR_AN_GOOD) {
+            if (krs->irq_hist[indx].irq & MESA_KR_AN_GOOD ||
+                krs->irq_hist[indx].irq & MESA_KR_WT_DONE ||
+                krs->irq_hist[indx].sm == 6 ||
+                krs->irq_hist[indx].sm == 7) {
                 b2 = &buf2[0];
                 mesa_port_kr_status_t sts;
                 mesa_port_kr_status_get(NULL, iport, &sts);
-                b2 += sprintf(b2, "Aneg results: %s / %s",mesa_port_spd2txt(krs->speed),krs->rfec ? "RFEC" : krs->rsfec ? "RSFEC" : "No FEC");
+                b2 += sprintf(b2, "AN:%s/%s. Block lock:%d",
+                              mesa_port_spd2txt(krs->speed),krs->rfec ? "RFEC" : krs->rsfec ? "RSFEC" : "No FEC",
+                              krs->irq_hist[indx].block_lock);
             }
 
-            cli_printf("%-4d%-10d%-10d%-30s%-22s%-32s\n",
+            cli_printf("%-4d%-10d%-10d%-40s%-22s%-32s\n",
                        indx, dt, delta, buf, kr_aneg_sm_2_txt(krs->irq_hist[indx].sm), buf2);
 
         }
@@ -918,9 +929,9 @@ static void cli_cmd_port_kr_status(cli_req_t *req)
             cli_printf("  Training          : Disabled\n");
         } else {
             cli_printf("\n  Training Results:\n");
-            cli_printf("  LP CM1 MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[CM1],krs->lp_tap_end_cnt[CM1]);
-            cli_printf("  LP C0  MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[C0], krs->lp_tap_end_cnt[C0]);
-            cli_printf("  LP CP1 MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[CP1],krs->lp_tap_end_cnt[CP1]);
+            cli_printf("  LP CM1 MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[CM1],krs->lp_tap_end_cnt[CM1] + 1);
+            cli_printf("  LP C0  MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[C0], krs->lp_tap_end_cnt[C0] + 1);
+            cli_printf("  LP CP1 MAX/END    : %d/%d\n",krs->lp_tap_max_cnt[CP1],krs->lp_tap_end_cnt[CP1] + 1);
             cli_printf("  BER_COUNT CM1     : ");
             for (u32 i = 0; i < krs->lp_tap_max_cnt[CM1]; i++) {
                 cli_printf("%d ",krs->ber_cnt[0][i]);
@@ -947,9 +958,9 @@ static void cli_cmd_port_kr_status(cli_req_t *req)
             }
 
             cli_printf("\n\n  This port Tx Equalizer settings:\n");
-            cli_printf("  LD CM (tap_dly)   : %d\n",sts.train.cm_ob_tap_result);
+            cli_printf("  LD CM1 (tap_adv)  : %d\n",sts.train.cm_ob_tap_result);
             cli_printf("  LD C0 (amplitude) : %d\n",sts.train.c0_ob_tap_result);
-            cli_printf("  LD CP (tap_adv)   : %d\n",sts.train.cp_ob_tap_result);
+            cli_printf("  LD CP1 (tap_dly)  : %d\n",sts.train.cp_ob_tap_result);
 
             (void)mesa_port_kr_ctle_get(NULL, iport, &ctle);
             cli_printf("\n  This port Rx CTLE settings:\n");
@@ -1013,6 +1024,7 @@ static void kr_add_to_irq_history(mesa_port_no_t p, uint32_t irq, mesa_port_kr_s
         krs->irq_hist[krs->irq_hist_index].lp_np0 = status->aneg.lp_np0;
         krs->irq_hist[krs->irq_hist_index].lp_np1 = status->aneg.lp_np1;
         krs->irq_hist[krs->irq_hist_index].lp_np2 = status->aneg.lp_np2;
+        krs->irq_hist[krs->irq_hist_index].block_lock = status->aneg.block_lock;
         krs->irq_hist_index++;
     }
     krs = &kr_conf_state[0].tr;
@@ -1135,9 +1147,11 @@ static void kr_poll_v3(meba_inst_t inst, mesa_port_no_t iport)
     }
 
     if (irq == 0) {
-        if (kr_conf_state[iport].aneg_sm_state != status.aneg.sm) {
+        if (kr_conf_state[iport].aneg_sm_state != status.aneg.sm ||
+            kr_conf_state[iport].block_lock != status.aneg.block_lock) {
             kr_add_to_irq_history(iport, irq, &status);
             kr_conf_state[iport].aneg_sm_state = status.aneg.sm;
+            kr_conf_state[iport].block_lock = status.aneg.block_lock;
         }
         return;
     }
@@ -1147,6 +1161,7 @@ static void kr_poll_v3(meba_inst_t inst, mesa_port_no_t iport)
     }
 
     kr_conf_state[iport].aneg_sm_state = status.aneg.sm;
+    kr_conf_state[iport].block_lock = status.aneg.block_lock;
 
     // Add IRQs to history
     kr_add_to_irq_history(iport, irq, &status);
@@ -1269,6 +1284,7 @@ static void kr_poll_v3(meba_inst_t inst, mesa_port_no_t iport)
             kr->rfec = status.aneg.r_fec_enable;
             kr->rsfec = status.aneg.rs_fec_enable;
         } else {
+            kr->speed = pconf.speed;
             printf("Port:%d - Aneg completed (%s) in %d ms\n",uport, mesa_port_spd2txt(pconf.speed), get_time_ms(&kr->time_start_aneg));
         }
         kr_conf_state[iport].next_parallel_spd = MESA_SPEED_2500M;
@@ -1328,7 +1344,7 @@ static void kr_poll(meba_inst_t inst)
 
 static cli_cmd_t cli_cmd_table[] = {
     {
-        "Port KR aneg [<port_list>] [all] [adv-1g] [adv-2g5] [adv-5g] [adv-10g] [adv-25g] [np] [rfec] [rsfec] [train] [no-remote] [no-pd] [test] [disable]",
+        "Port KR aneg [<port_list>] [all] [adv-1g] [adv-2g5] [adv-5g] [adv-10g] [adv-25g] [np] [rfec] [rsfec] [train] [no-remote] [no-pd] [pcs-flap] [test] [disable]",
         "Set or show kr",
         cli_cmd_port_kr
     },
@@ -1530,6 +1546,14 @@ static cli_parm_t cli_parm_table[] = {
         CLI_PARM_FLAG_NO_TXT | CLI_PARM_FLAG_SET,
         cli_parm_keyword
     },
+
+    {
+        "pcs-flap",
+        "mesa-837",
+        CLI_PARM_FLAG_NO_TXT | CLI_PARM_FLAG_SET,
+        cli_parm_keyword
+    },
+
 
     {
         "<poll_cnt>",

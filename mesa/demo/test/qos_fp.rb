@@ -11,14 +11,14 @@ $ts = get_test_setup("mesa_pc_b2b_2x", {}, "", "loop")
 cap_check_exit("QOS_FRAME_PREEMPTION")
 
 # Check that two loop ports exist
-loop_pair_check
+port_list = loop_pair_check(true)
 
 #---------- Configuration -----------------------------------------------------
 
 $idx_tx = 0
 $idx_rx = 1
-$lp0 = $ts.dut.looped_port_list[0]
-$lp1 = $ts.dut.looped_port_list[1]
+$lp0 = port_list[0]
+$lp1 = port_list[1]
 
 test "conf" do
     p0 = $ts.dut.p[$idx_tx]
@@ -93,7 +93,7 @@ end
 
 test "frame-io" do
     cnt = 10
-    len_uc = 3000
+    len_uc = 5000
     len_bc = 64
     for i in 0..(cnt - 1) do
         cmd = "sudo ef "

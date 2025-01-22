@@ -191,6 +191,32 @@ void vtss_cmn_counter_32_cmd(u32 value, vtss_chip_counter_t *counter, vtss_count
     counter->prev = new;
 }
 
+void vtss_cmn_counter_dual_cmd(u32 emac, u32 pmac, vtss_dual_counter_t *counter, vtss_counter_cmd_t cmd)
+{
+    u64 add = 0;
+
+    switch (cmd) {
+    case VTSS_COUNTER_CMD_CLEAR:
+        /* Clear counter */
+        counter->value = 0;
+        break;
+    case VTSS_COUNTER_CMD_UPDATE:
+        /* Accumulate EMAC/PMAC counter */
+        add += emac;
+        add += (emac < counter->emac ? (1ULL<<32) : 0);
+        add -= counter->emac;
+        add += pmac;
+        add += (pmac < counter->pmac ? (1ULL<<32) : 0);
+        add -= counter->pmac;
+        counter->value += add;
+        break;
+    default:
+        break;
+    }
+    counter->emac = emac;
+    counter->pmac = pmac;
+}
+
 /* Rebase 64-bit counter, i.e. discard changes since last update, based on 40-bit chip counter */
 void vtss_cmn_counter_40_rebase(u32 new_lsb, u32 new_msb, vtss_chip_counter_t *counter)
 {
@@ -233,9 +259,17 @@ const char *vtss_serdes_mode_txt(vtss_serdes_mode_t mode)
 #if defined(VTSS_FEATURE_CORE_CLOCK)
 const char *vtss_core_freq_to_txt(vtss_core_clock_freq_t freq)
 {
-    return (freq == VTSS_CORE_CLOCK_250MHZ ? "250MHZ" :
+    return (freq == VTSS_CORE_CLOCK_180MHZ ? "180MHZ" :
+            freq == VTSS_CORE_CLOCK_250MHZ ? "250MHZ" :
+            freq == VTSS_CORE_CLOCK_328MHZ ? "328MHZ" :
             freq == VTSS_CORE_CLOCK_500MHZ ? "500MHZ" :
             freq == VTSS_CORE_CLOCK_625MHZ ? "625MHZ" : "?");
+}
+
+const char *vtss_ref_freq_to_txt(vtss_core_ref_clk_t freq)
+{
+    return (freq == VTSS_CORE_REF_CLK_25MHZ ? "25MHZ" :
+            freq == VTSS_CORE_REF_CLK_39MHZ ? "39MHZ" : "-");
 }
 #endif
 /* ================================================================= *
@@ -245,6 +279,15 @@ const char *vtss_core_freq_to_txt(vtss_core_clock_freq_t freq)
 const char *vtss_bool_txt(BOOL enabled)
 {
     return (enabled ? "Enabled" : "Disabled");
+}
+
+char *vtss_mac_txt(vtss_mac_t *mac)
+{
+    static char buf[18];
+    u8 *p = mac->addr;
+
+    VTSS_SPRINTF(buf, "%02x-%02x-%02x-%02x-%02x-%02x", p[0], p[1], p[2], p[3], p[4], p[5]);
+    return buf;
 }
 
 #if VTSS_OPT_DEBUG_PRINT
@@ -286,6 +329,7 @@ static const char *const vtss_debug_group_name[VTSS_DEBUG_GROUP_COUNT] = {
     [VTSS_DEBUG_GROUP_ERPS]      = "ERPS",
     [VTSS_DEBUG_GROUP_EPS]       = "EPS",
     [VTSS_DEBUG_GROUP_SR]        = "Seamless Redundancy",
+    [VTSS_DEBUG_GROUP_REDBOX]    = "RedBox",
     [VTSS_DEBUG_GROUP_PACKET]    = "Packet",
     [VTSS_DEBUG_GROUP_FDMA]      = "FDMA (obsoleted)",
     [VTSS_DEBUG_GROUP_TS]        = "Timestamping",
@@ -383,12 +427,16 @@ static void vtss_debug_print_init(vtss_state_t *vtss_state,
         return;
 
     pr("Target     : 0x%04X\n", vtss_state->create.target);
+    pr("Chip / Rev : 0x%04X / %d\n", vtss_state->misc.chip_id.part_number,
+       vtss_state->misc.chip_id.revision);
 #if defined(VTSS_FEATURE_PORT_MUX)
     pr("Mux mode   : 0x%04x\n", vtss_state->init_conf.mux_mode);
 #endif /* VTSS_FEATURE_PORT_MUX */
 #if defined(VTSS_FEATURE_CORE_CLOCK)
-    pr("Core clock : %s\n", vtss_core_freq_to_txt(vtss_state->init_conf.core_clock.freq));
+    pr("Core clock : %s / %s\n", vtss_core_freq_to_txt(vtss_state->init_conf.core_clock.freq),
+       vtss_ref_freq_to_txt(vtss_state->init_conf.core_clock.ref_freq));
 #endif /* VTSS_FEATURE_PORT_MUX */
+    pr("VTSS_PORTS : %d\n", VTSS_PORTS);
     pr("State Size : %zu\n", sizeof(*vtss_state));
 #if defined(VTSS_FEATURE_MISC)
     pr("Misc Size  : %zu\n", sizeof(vtss_state->misc));
@@ -558,9 +606,9 @@ static vtss_rc vtss_debug_ail_print(vtss_state_t *vtss_state,
     vtss_l2_debug_print(vtss_state, pr, info);
 #endif /* VTSS_FEATURE_LAYER2 */
 
-#if defined(VTSS_FEATURE_ACL)
+#if defined(VTSS_FEATURE_VCAP)
     vtss_vcap_debug_print_acl(vtss_state, pr, info);
-#endif /* VTSS_FEATURE_ACL */
+#endif /* VTSS_FEATURE_VCAP */
 
 #if defined(VTSS_FEATURE_QOS)
     vtss_qos_debug_print(vtss_state, pr, info);
@@ -622,7 +670,7 @@ static vtss_rc vtss_debug_cil_print(vtss_state_t *vtss_state,
         VTSS_SELECT_CHIP(chip_no);
         VTSS_SPRINTF(buf, "Chip Interface Layer[%u]", chip_no);
         vtss_debug_print_header_underlined(pr, buf, 1);
-        rc = VTSS_FUNC(cil.debug_info_print, pr, info);
+        rc = vtss_cil_debug_info_print(vtss_state, pr, info);
     }
     return rc;
 }

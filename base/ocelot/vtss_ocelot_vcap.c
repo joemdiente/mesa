@@ -2242,9 +2242,9 @@ static vtss_rc srvl_is2_entry_add(vtss_state_t *vtss_state,
     }
 
     sp.value = sport->low;
-    sp.mask = (sport->in_range && sport->low == sport->high ? 0xffff : 0);
+    sp.mask = sport->high;
     dp.value = dport->low;
-    dp.mask = (dport->in_range && dport->low == dport->high ? 0xffff : 0);
+    dp.mask = dport->high;
     range = ((is2->srange == VTSS_VCAP_RANGE_CHK_NONE ? 0 : (1 << is2->srange)) |
              (is2->drange == VTSS_VCAP_RANGE_CHK_NONE ? 0 : (1 << is2->drange)));
 
@@ -3236,7 +3236,7 @@ static vtss_rc srvl_ace_add(vtss_state_t *vtss_state,
     vtss_is2_data_t             *is2 = &data.u.is2;
     vtss_is2_entry_t            entry;
     vtss_res_chg_t              chg;
-    const vtss_ace_udp_tcp_t    *sport = NULL, *dport = NULL;
+    vtss_ace_udp_tcp_t          *sport = NULL, *dport = NULL;
     vtss_vcap_range_chk_table_t range_new = vtss_state->vcap.range; 
     BOOL                        sip_smac_new = 0, sip_smac_old = 0;
     vtss_port_no_t              port_no;
@@ -3275,17 +3275,18 @@ static vtss_rc srvl_ace_add(vtss_state_t *vtss_state,
             chg.add_key[VTSS_VCAP_KEY_SIZE_QUARTER] = 1;
         }
         if (vtss_vcap_udp_tcp_rule(&ace->frame.ipv4.proto)) {
-            sport = &ace->frame.ipv4.sport;
-            dport = &ace->frame.ipv4.dport;
+            sport = &entry.ace.frame.ipv4.sport;
+            dport = &entry.ace.frame.ipv4.dport;
         } 
     }
     if (ace->type == VTSS_ACE_TYPE_IPV6 && vtss_vcap_udp_tcp_rule(&ace->frame.ipv6.proto)) {
-        sport = &ace->frame.ipv6.sport;
-        dport = &ace->frame.ipv6.dport;
+        sport = &entry.ace.frame.ipv6.sport;
+        dport = &entry.ace.frame.ipv6.dport;
     }
     VTSS_RC(vtss_cmn_vcap_res_check(obj, &chg));
 
     vtss_vcap_is2_init(&data, &entry);
+    entry.ace = *ace;
     if (sport && dport) {
         /* Allocate new range checkers */
         VTSS_RC(vtss_vcap_udp_tcp_range_alloc(&range_new, &is2->srange, sport, 1));
@@ -3297,7 +3298,6 @@ static vtss_rc srvl_ace_add(vtss_state_t *vtss_state,
 
     /* Add main entry */
     entry.first = 1;
-    entry.ace = *ace;
     if (sip_smac_new) {
         entry.host_match = 1;
         entry.ace.frame.ipv4.sip.value = ace->frame.ipv4.sip_smac.sip;
@@ -3499,7 +3499,7 @@ static vtss_rc srvl_vcap_port_key_addr_set(vtss_state_t         *vtss_state,
     return VTSS_RC_OK;
 }
 
-vtss_rc vtss_srvl_vcap_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_l2_vcl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     vtss_vcl_port_conf_t *conf = &vtss_state->l2.vcl_port_conf[port_no];
     BOOL                 dmac_dip_new = conf->dmac_dip;
@@ -3667,8 +3667,6 @@ vtss_rc vtss_srvl_vcap_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
     case VTSS_INIT_CMD_CREATE:
 #if defined(VTSS_FEATURE_IS0)
         /* IS0 */
-        is0->max_count = SRVL_IS0_CNT;
-        is0->max_rule_count = VTSS_SRVL_IS0_CNT;
         is0->entry_get = srvl_is0_entry_get;
         is0->entry_add = srvl_is0_entry_add;
         is0->entry_del = srvl_is0_entry_del;
@@ -3676,16 +3674,12 @@ vtss_rc vtss_srvl_vcap_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
 #endif /* VTSS_FEATURE_IS0 */
         
         /* IS1 */
-        is1->max_count = SRVL_IS1_CNT;
-        is1->max_rule_count = VTSS_SRVL_IS1_CNT;
         is1->entry_get = srvl_is1_entry_get;
         is1->entry_add = srvl_is1_entry_add;
         is1->entry_del = srvl_is1_entry_del;
         is1->entry_move = srvl_is1_entry_move;
         
         /* IS2 */
-        is2->max_count = SRVL_IS2_CNT;
-        is2->max_rule_count = VTSS_SRVL_IS2_CNT;
         is2->entry_get = srvl_is2_entry_get;
         is2->entry_add = srvl_is2_entry_add;
         is2->entry_del = srvl_is2_entry_del;
@@ -3693,8 +3687,6 @@ vtss_rc vtss_srvl_vcap_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
         state->is2_entry_update = srvl_is2_entry_update;
         
         /* ES0 */
-        es0->max_count = SRVL_ES0_CNT;
-        es0->max_rule_count = VTSS_SRVL_ES0_CNT;
         es0->entry_get = srvl_es0_entry_get;
         es0->entry_add = srvl_es0_entry_add;
         es0->entry_del = srvl_es0_entry_del;

@@ -64,6 +64,7 @@ typedef enum
     VTSS_BW_5G,          /**< Max 5G */
     VTSS_BW_10G,         /**< Max 10G */
     VTSS_BW_25G,         /**< Max 25G */
+    VTSS_BW_NONE,        /**< No bandwith allocated */
     VTSS_BW_UNDEFINED,   /**< Undefined */
 } vtss_internal_bw_t;
 
@@ -86,6 +87,13 @@ typedef struct
     u32                    bit;    /**< SGPIO bit (0-3) */
 } vtss_port_sgpio_map_t;
 
+/** \brief Signal detect mapping to GPIO */
+typedef struct
+{
+    BOOL enable; /**< Enable gpio to dev mapping */
+    u8 sfp_sd;   /**< SFP_SD<id> id, see GPIO ALT modes for chip */
+} vtss_gpio_sd_map_t;
+
  /** Signifies an unused chip port */
 #define CHIP_PORT_UNUSED -1
 
@@ -94,15 +102,16 @@ typedef struct
 {
     i32                    chip_port;        /**< Set to -1 if not used */
     vtss_chip_no_t         chip_no;          /**< Chip number, multi-chip targets */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_internal_bw_t     max_bw;           /**< Max internal bandwidth reserved for the port */
 #endif /* VTSS_ARCH_JAGUAR_2 || VTSS_ARCH_SPARX5 */
     vtss_miim_controller_t miim_controller;  /**< MII management controller */
     u8                     miim_addr;        /**< PHY address, ignored for VTSS_MIIM_CONTROLLER_NONE */
     vtss_chip_no_t         miim_chip_no;     /**< MII management chip number, multi-chip targets */
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X) || defined(VTSS_ARCH_LAN966X)
     vtss_port_sgpio_map_t  sd_map;           /**< PCS signal detect to SGPIO bit map */
-#endif /*VTSS_ARCH_SPARX5 */
+    vtss_gpio_sd_map_t     sd_gpio_map;      /**< PCS signal detect to GPIO SD map */
+#endif /* VTSS_ARCH_SPARX5 || VTSS_ARCH_LAN969X || VTSS_ARCH_LAN966X */
 } vtss_port_map_t;
 
 /**
@@ -457,6 +466,31 @@ vtss_rc vtss_port_forward_state_set(const vtss_inst_t          inst,
                                     const vtss_port_no_t       port_no,
                                     const vtss_port_forward_t  forward);
 
+/** \brief Port bulk config state */
+typedef enum
+{
+    VTSS_PORT_BULK_DISABLED, /**< Port bulk set disabled */
+    VTSS_PORT_BULK_ENABLED,  /**< Port conf written to internal state only */
+    VTSS_PORT_BULK_APPLY,    /**< Port internal state applied to hardware */
+} vtss_port_bulk_t;
+
+#if defined(VTSS_FEATURE_PORT_CONF_BULK)
+/**
+ * \brief Set port bulk state
+ *  Used when configuring multiple ports to the same config, speeds up the config.
+ *  1. Enable bulk state
+ *  2. Configure ports in normal manner (configuration is not applied to HW)
+ *  3. Apply bulk state (configuration is applied to HW)
+ *
+ * \param inst [IN]  Target instance reference.
+ * \param bulk [IN]  bulk state (disable/enabled/apply)
+ *
+ * \return Return code.
+ **/
+vtss_rc vtss_port_conf_bulk_set(const vtss_inst_t      inst,
+                                const vtss_port_bulk_t bulk);
+#endif /* VTSS_FEATURE_PORT_CONF_BULK */
+
 #if defined(VTSS_FEATURE_PORT_IFH)
 /** \brief Port Internal Frame Header structure */
 typedef struct
@@ -762,6 +796,7 @@ typedef struct {
     BOOL use_ber_cnt;       /**< Use BER count instead of eye height */
     BOOL test_mode;         /**< Debug only */
     u32  test_repeat;       /**< Debug only */
+    BOOL pcs_flap;          /**< mesa-837 */
 } vtss_port_kr_train_t;
 
 /** \brief  KR configuration structures */

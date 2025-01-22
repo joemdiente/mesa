@@ -18,6 +18,7 @@ typedef enum {
     MESA_CHIP_FAMILY_OCELOT  = 8, /**< Ocelot/Ferret */
     MESA_CHIP_FAMILY_SPARX5  = 9, /**< SparX-5 */
     MESA_CHIP_FAMILY_LAN966X = 10,/**< LAN966X */
+    MESA_CHIP_FAMILY_LAN969X = 11,/**< LAN969X */
 } mesa_chip_family_t;
 
 typedef enum {
@@ -27,7 +28,10 @@ typedef enum {
 
 typedef enum {
     MESA_SWITCH_BW_UNKNOWN,  /**< Unknown */
+    MESA_SWITCH_BW_40,       /**< 40Gb  + NPI */
+    MESA_SWITCH_BW_60,       /**< 60Gb  + NPI */
     MESA_SWITCH_BW_64,       /**< 64Gb  + NPI */
+    MESA_SWITCH_BW_80,       /**< 80Gb  + NPI */
     MESA_SWITCH_BW_90,       /**< 90Gb  + NPI */
     MESA_SWITCH_BW_128,      /**< 128Gb + NPI */
     MESA_SWITCH_BW_160,      /**< 160Gb + NPI */
@@ -47,6 +51,7 @@ typedef enum {
     MESA_CAP_MISC_DAC_CONTROLS_LOCAL_OSC,   /**< Local oscillator is controlled by DAC */
     MESA_CAP_MISC_SWITCH_BW,                /**< Max switching Bandwidth in Gbps */
     MESA_CAP_MISC_SGPIO_MAP,                /**< SGPIO to Signal detect map */
+    MESA_CAP_MISC_FPGA,                     /**< FPGA based chip */
 
     // Port
     MESA_CAP_PORT_CNT = 100,                /**< Maximum number of ports */
@@ -69,6 +74,8 @@ typedef enum {
     MESA_CAP_PORT_CNT_PTP_PHYS_AND_VIRT,    /**< Number of PTP ports counting physical and virtual ports */
     MESA_CAP_PORT_LAST_FRAME_LEN_THRESHOLD, /**< The max length of the frames counted in the last range of the frame counter group */
     MESA_CAP_PORT_PCS_CONF,                 /**< Specific control of the 1G PCS */
+    MESA_CAP_PORT_DYNAMIC,                  /**< Support for dynamic (run-time) port change within a serdes  */
+    MESA_CAP_PORT_CONF_BULK,                /**< Configuration of multiple ports applied to hardware for speed-up */
 
     // Packet
     MESA_CAP_PACKET_RX_QUEUE_CNT = 200,     /**< Number of Rx packet queues */
@@ -128,6 +135,9 @@ typedef enum {
     MESA_CAP_L2_FRER_IFLOW_POP,             /**< FRER R-tag popping per ingress flow */
     MESA_CAP_L2_RCL,                        /**< Real-time Control List */
     MESA_CAP_L2_MAC_INDEX_TABLE,            /**< Index-based MAC address table */
+    MESA_CAP_L2_REDBOX_CNT,                 /**< Number of RedBoxes */
+    MESA_CAP_L2_ONE_SHOT,                   /**< Learn frames cannot move to other port */
+    MESA_CAP_L2_LEARN_LIMIT,                /**< MAC learning limit per port */
 
     // Layer 3
     MESA_CAP_L3 = 500,                      /**< Layer 3 switching */
@@ -156,6 +166,7 @@ typedef enum {
     MESA_CAP_QOS_WRED,                      /**< WRED */
     MESA_CAP_QOS_DLB_CM,                    /**< DLB policer Color Mode */
     MESA_CAP_QOS_EGRESS_SHAPERS_RT,         /**< Egress shaper rate type support */
+    MESA_CAP_QOS_EGRESS_SHAPER_FRAME,       /**< Egress shaper frame rate type support */
     MESA_CAP_QOS_EGRESS_SHAPERS_DLB,        /**< Egress shaper DLB support */
     MESA_CAP_QOS_PORT_POLICER_EXT_DPBL,     /**< Drop Precedence Bypass Level */
     MESA_CAP_QOS_PORT_POLICER_EXT_TTM,      /**< Traffic type mask */
@@ -220,6 +231,7 @@ typedef enum {
     MESA_CAP_QOS_PORT_STORM_FRAME_BURST_MAX,
     MESA_CAP_DSCP_CNT,
     MESA_CAP_QOS_CPU_QUEUE_SHAPER,
+    MESA_CAP_QOS_OT,                        /**< Operational Technology traffic handling */
 
     // Security/ACL
     MESA_CAP_ACL_POLICER_CNT = 800,         /**< Number of ACL policers */
@@ -242,6 +254,7 @@ typedef enum {
     MESA_CAP_ACL_HACL,                      /**< Hierarchical ACLs */
     MESA_CAP_ACL_EXT_DIP,                   /**< ACL extended IPv6 rule with DIP matching */
     MESA_CAP_ACL_EXT_MAC,                   /**< ACL extended IPv4/IPv6 rules with MAC address matching */
+    MESA_CAP_ACL_MAC_IGR,                   /**< ACL ingress MAC address operations */
 
     // EVC
     MESA_CAP_EVC_EVC_CNT = 900,             /**< Number of EVCs */
@@ -359,6 +372,7 @@ typedef enum {
     MESA_CAP_TS_INTERNAL_PORTS_REQ_TWOSTEP, /**< Transparent clock via internal ports require two-step operation */
     MESA_CAP_TS_BC_TS_COMBO_IS_SPECIAL,     /**< The combination of a BC and a TS needs to be handled as a special case */
     MESA_CAP_TS_TWOSTEP_USE_PTP_ID,         /**< Indicates if ptp_id field of packet is used for timestamp id in two-step transmission. */
+    MESA_CAP_TS_PCH,                        /**< Hardware support PCH preamble */
 
     // TOD
     MESA_CAP_TOD_SAMPLES_PR_SEC,            /**< The number of times per second that the timeofday is sampled */
@@ -397,6 +411,8 @@ typedef enum {
     // MRP
     MESA_CAP_MRP = 2200,                    /**< Media Redundancy Protocol - IEC 62439-2 MRP */
     MESA_CAP_MRP_CNT,                       /**< Total count of MRPs */
+    MESA_CAP_MRP_V0,                        /**< OAM generation 0 (Maserati) */
+    MESA_CAP_MRP_V1,                        /**< OAM generation 1 (Laguna) */
 
 } mesa_cap_t;
 

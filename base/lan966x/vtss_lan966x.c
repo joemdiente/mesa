@@ -154,9 +154,9 @@ void vtss_lan966x_debug_cnt(const vtss_debug_printf_t pr, const char *col1, cons
 /* ================================================================= *
  *  Debug print
  * ================================================================= */
-static vtss_rc lan966x_debug_info_print(vtss_state_t *vtss_state,
-                                        const vtss_debug_printf_t pr,
-                                        const vtss_debug_info_t   *const info)
+vtss_rc vtss_cil_debug_info_print(vtss_state_t *vtss_state,
+                                  const vtss_debug_printf_t pr,
+                                  const vtss_debug_info_t   *const info)
 {
     VTSS_RC(vtss_lan966x_misc_debug_print(vtss_state, pr, info));
     VTSS_RC(vtss_lan966x_port_debug_print(vtss_state, pr, info));
@@ -217,12 +217,12 @@ vtss_rc vtss_lan966x_init_groups(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
     return VTSS_RC_OK;
 }
 
-static vtss_rc lan966x_port_map_set(vtss_state_t *vtss_state)
+vtss_rc vtss_cil_port_map_set(vtss_state_t *vtss_state)
 {
     return vtss_lan966x_init_groups(vtss_state, VTSS_INIT_CMD_PORT_MAP);
 }
 
-static vtss_rc lan966x_restart_conf_set(vtss_state_t *vtss_state)
+vtss_rc vtss_cil_restart_conf_set(vtss_state_t *vtss_state)
 {
     return VTSS_RC_OK;
 }
@@ -248,7 +248,7 @@ static vtss_rc lan966x_mux_mode_set(vtss_state_t *vtss_state)
                CHIP_TOP_CUPHY_COMMON_CFG_RESET_N(1));
         break;
     case VTSS_PORT_MUX_MODE_2:
-        // 2xCu + 1x2,5G + 2xRGMII(dev2,dev3)
+        // 2xCu/1G + 1x2,5G + 2xRGMII(dev2,dev3)
         REG_WR(HSIO_HW_CFG,
                HSIO_HW_CFG_RGMII_ENA(3) |
                HSIO_HW_CFG_GMII_ENA(0xf));
@@ -278,7 +278,7 @@ static vtss_rc lan966x_mux_mode_set(vtss_state_t *vtss_state)
     return VTSS_RC_OK;
 }
 
-static vtss_rc lan966x_init_conf_set(vtss_state_t *vtss_state)
+vtss_rc vtss_cil_init_conf_set(vtss_state_t *vtss_state)
 {
     u32 val;
 #if defined(VTSS_OPT_FPGA)
@@ -316,7 +316,8 @@ static vtss_rc lan966x_init_conf_set(vtss_state_t *vtss_state)
 
     /* Initialize RAM */
     REG_WRM(SYS_RESET_CFG, SYS_RESET_CFG_CORE_ENA(0), SYS_RESET_CFG_CORE_ENA_M);
-    REG_WRM(SYS_RAM_INIT, SYS_RAM_INIT_RAM_INIT(1), SYS_RAM_INIT_RAM_INIT_M);
+    REG_WRM(SYS_RAM_INIT, SYS_RAM_INIT_RAM_INIT(1) | SYS_RAM_INIT_RAM_CFG_HOOK(0),
+            SYS_RAM_INIT_RAM_INIT_M | SYS_RAM_INIT_RAM_CFG_HOOK_M);
     do {
         REG_RD(SYS_RAM_INIT, &val);
     } while (SYS_RAM_INIT_RAM_INIT_X(val) != 0);
@@ -327,22 +328,13 @@ static vtss_rc lan966x_init_conf_set(vtss_state_t *vtss_state)
     return vtss_lan966x_init_groups(vtss_state, VTSS_INIT_CMD_INIT);
 }
 
-static vtss_rc lan966x_register_access_mode_set(vtss_state_t *vtss_state)
+vtss_rc vtss_cil_register_access_mode_set(vtss_state_t *vtss_state)
 {
     return VTSS_RC_OK;
 }
 
 vtss_rc vtss_lan966x_inst_create(vtss_state_t *vtss_state)
 {
-    /* Initialization */
-    vtss_state->cil.init_conf_set = lan966x_init_conf_set;
-    vtss_state->cil.register_access_mode_set = lan966x_register_access_mode_set;
-    vtss_state->cil.restart_conf_set = lan966x_restart_conf_set;
-#if VTSS_OPT_DEBUG_PRINT
-    vtss_state->cil.debug_info_print = lan966x_debug_info_print;
-#endif
-    vtss_state->port.map_set = lan966x_port_map_set;
-
     /* Create function groups */
     return vtss_lan966x_init_groups(vtss_state, VTSS_INIT_CMD_CREATE);
 }

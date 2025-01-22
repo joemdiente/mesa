@@ -25,9 +25,23 @@ mepa_rc meba_phy_conf_set(meba_inst_t inst, mepa_port_no_t port_no,
 // Get the current PHY configuration.
 mepa_rc meba_phy_conf_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_conf_t *const  conf);
 
+// Read the PHY using I2C
+mepa_rc meba_phy_i2c_read(meba_inst_t inst, mepa_port_no_t port_no, const uint8_t i2c_mux, const uint8_t i2c_reg_addr,
+                          const uint8_t i2c_dev_addr, const mepa_bool_t word_access, uint8_t cnt, uint8_t  *const value);
+
+// Write the PHY using I2C
+mepa_rc meba_phy_i2c_write(meba_inst_t inst, mepa_port_no_t port_no, const uint8_t i2c_mux, const uint8_t i2c_reg_addr,
+                           const uint8_t i2c_dev_addr, const mepa_bool_t word_access, uint8_t cnt, const uint8_t  *const value);
+
+// Select the I2C clock frequency
+mepa_rc meba_phy_i2c_clock_select(meba_inst_t inst, mepa_port_no_t port_no, const mepa_i2c_clk_select_t *clk_value);
+
 // Get the PHY interface based on speed.
 mepa_rc meba_phy_if_get(meba_inst_t inst, mepa_port_no_t port_no,
                         mepa_port_speed_t speed, mepa_port_interface_t *intf);
+
+// Set the PHY interface based on the inputs.
+mepa_rc meba_phy_if_set(meba_inst_t inst, mepa_port_no_t port_no, mepa_port_interface_t intf);
 
 // Sets the power mode in PHY.
 mepa_rc meba_phy_power_set(meba_inst_t inst, mepa_port_no_t port_no,
@@ -44,6 +58,24 @@ mepa_rc meba_phy_media_set(meba_inst_t inst, mepa_port_no_t port_no, mepa_media_
 
 // Gets Copper 1G PHY auto negotiation status.
 mepa_rc meba_phy_aneg_status_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_aneg_status_t *status);
+
+// Set FEFI configuration
+mepa_rc meba_phy_fefi_set(meba_inst_t inst, mepa_port_no_t port_no, const mepa_fefi_mode_t *fefi_conf);
+
+// Get FEFI configuration
+mepa_rc meba_phy_fefi_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_fefi_mode_t *const fefi_conf);
+
+// Detect FEFI occurance
+mepa_rc meba_phy_fefi_detect(meba_inst_t inst, mepa_port_no_t port_no, mepa_bool_t *const detect);
+
+// Set EEE configurations
+mepa_rc meba_phy_eee_mode_conf_set(meba_inst_t inst, mepa_port_no_t port_no, const mepa_phy_eee_conf_t conf);
+
+// Get EEE configurations
+mepa_rc meba_phy_eee_mode_conf_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_phy_eee_conf_t *const conf);
+
+// Get EEE Status
+mepa_rc meba_phy_eee_status_get(meba_inst_t inst, mepa_port_no_t port_no, uint8_t *const advertisement, mepa_bool_t *const rx_in_power_save_state, mepa_bool_t *const tx_in_power_save_state);
 
 // Read registers using clause22 format for debugging.
 // address format : bits 0 - 4 : address within page i.e. 0 - 31 addresses.
@@ -109,7 +141,10 @@ mepa_rc meba_phy_debug_info_print(const meba_inst_t         inst,
 mepa_rc meba_phy_info_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_phy_info_t *const phy_info);
 
 // Enable/Disable isolate mode
-mepa_rc meba_isolate_mode_conf(meba_inst_t inst, mepa_port_no_t port_no,            const mepa_bool_t iso_en);
+mepa_rc meba_isolate_mode_conf(meba_inst_t inst, mepa_port_no_t port_no, const mepa_bool_t iso_en);
+
+// Read Chip Temperature
+mepa_rc meba_phy_chip_temp_get(meba_inst_t inst, mepa_port_no_t port_no, int16_t *const temp);
 
 // Get the SQI value
 mepa_rc meba_phy_sqi_read(meba_inst_t inst, mepa_port_no_t port_no, uint32_t *const value);
@@ -130,6 +165,8 @@ mepa_rc meba_selftest_start(meba_inst_t inst, mepa_port_no_t port_no,
 // Read Self-Test Checking counters
 mepa_rc meba_selftest_read(meba_inst_t inst, mepa_port_no_t port_no,
                             mepa_selftest_info_t *const inf);
+// Delete the phy instance
+mepa_rc meba_phy_delete(meba_inst_t inst, mepa_port_no_t port_no);
 
 // To Set PRBS
 mepa_rc meba_prbs_set(meba_inst_t inst, mepa_port_no_t port_no, mepa_phy_prbs_type_t type, mepa_phy_prbs_direction_t direction, mepa_phy_prbs_generator_conf_t *const conf);
@@ -142,6 +179,15 @@ mepa_rc meba_prbs_monitor_set(meba_inst_t inst, mepa_port_no_t port_no, mepa_phy
 
 //To get error status of PRBS
 mepa_rc meba_prbs_monitor_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_phy_prbs_monitor_conf_t *const value);
+
+//Warmstart PHY
+mepa_rc meba_warmrestart_conf_end(meba_inst_t inst, mepa_port_no_t port_no);
+
+//Warmstart conf get
+mepa_rc meba_warmrestart_conf_get(meba_inst_t inst, mepa_port_no_t port_no, mepa_restart_t *const restart);
+
+//set PHY for warmstart
+mepa_rc meba_warmrestart_conf_set(meba_inst_t inst, mepa_port_no_t port_no, const mepa_restart_t restart);
 
 #include <microchip/ethernet/hdr_end.h>
 #endif //_MICROCHIP_ETHERNET_BOARD_PHY_DRIVER_H

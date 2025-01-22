@@ -105,6 +105,7 @@ $machines = {
             :file => "#{$bsp}/arm-cortex_a8-linux-gnu/xstax/release/lan966x-mesa-pcb8309.dtb",
             :overlays => [
                 { :name => "lan9662_ung8309_0_at_lan966x", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8309_0.dtso"},
+                { :name => "lan9662_ung8309_1_at_lan966x", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8309_1.dtso"},
             ]
           },
           {
@@ -119,15 +120,34 @@ $machines = {
                 { :name => "lan9668_ung8281_0_at_lan966x", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8281_0.dtso"},
             ]
           },
-          {
-            :file => "#{$bsp}/arm-cortex_a8-linux-gnu/xstax/release/lan966x-mesa-sr.dtb",
-            :overlays => [
-                { :name => "lan9668_sr6849_0_at_lan966x", :file => "#{$p_mesa}/meba/dt/meba_lan966x_6849_0.dtso"},
-            ]
-          },
         ],
         :fdtaddr => "<0x67e00000>",
         :rootfs => "#{$bsp}/arm-cortex_a8-linux-gnu/xstax/release/rootfs.tar",
+      },
+
+    "lan969x" => {  # Note: Currently for building only (need to be updated for a life target)
+        :arch => "arm64",
+        :kernel => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/mscc-linux-kernel.bin.gz",
+        :kerneladdr  => "/bits/ 64 <0x60000000>",
+        :kernelentry => "/bits/ 64 <0x60000000>",
+        :ramdiscaddr => "/bits/ 64 <0x61000000>",
+        :kcomp => "gzip",
+        :dt => [
+          {
+            :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/lan969x_appl_ev23x71a.dtb",
+            :overlays => [
+                { :name => "lan9698_ev23x71a_0_at_lan969x", :file => "#{$p_mesa}/meba/dt/meba_lan969x_8398_0.dtso"},
+            ]
+          },
+          {
+            :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/lan969x_appl_ev89p81a.dtb",
+            :overlays => [
+                { :name => "lan9698_ev89p81a_0_at_lan969x", :file => "#{$p_mesa}/meba/dt/meba_lan969x_8422_0.dtso"},
+            ]
+          },
+        ],
+        :fdtaddr => "/bits/ 64 <0x6fff0000>",
+        :rootfs => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/rootfs.tar",
     },
 
     "fireant" => {
@@ -138,11 +158,10 @@ $machines = {
         :kcomp => "gzip",
         :dt => [
             { :name => "pcb125",        :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_pcb125.dtb"},
-            { :name => "pcb134",        :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_pcb134.dtb"},
-            { :name => "pcb134_emmc",   :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_pcb134_emmc.dtb"},
-            { :name => "pcb135",        :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_pcb135.dtb"},
-            { :name => "pcb135_emmc",   :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_pcb135_emmc.dtb"},
-            { :name => "ls1046_pcb121", :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/ls1046_pcb121.dtb"},
+            { :name => "pcb134",        :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_appl_pcb134.dtb"},
+            { :name => "pcb134_emmc",   :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_appl_pcb134_emmc.dtb"},
+            { :name => "pcb135",        :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_appl_pcb135.dtb"},
+            { :name => "pcb135_emmc",   :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/sparx5_appl_pcb135_emmc.dtb"},
             { :name => "ls1046_pcb134", :file => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/ls1046_pcb134.dtb"},
         ],
         :fw_env => "/dev/mtd1 0x0000 0x2000 0x40000\n/dev/mtd2 0x0000 0x2000 0x40000\n",
@@ -151,7 +170,7 @@ $machines = {
 
     "ocelot_pcb121" => {
         :arch => "arm64",
-        :kernel => "#{$bsp}/arm64-armv8_a-linux-gnu/xstax/release/mscc-linux-kernel.bin.gz",
+        :kernel => "#{$bsp}/arm64-armv8_a-linux-gnu/standalone/release/mscc-linux-kernel.bin.gz",
         :kerneladdr => "<0x80080000>",
         :kernelentry => "<0x80080000>",
         :ramdiscaddr => "<0x88080000>",
@@ -184,8 +203,16 @@ $machines = {
                   { :name => "8290_0@bbb", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8290_0.dtso"},
                   { :name => "8291_0@bbb", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8291_0.dtso"},
                   { :name => "8309_0@bbb", :file => "#{$p_mesa}/meba/dt/meba_lan966x_8309_0.dtso"},
+                  { :name => "8398_1@bbb", :file => "#{$p_mesa}/meba/dt/meba_lan969x_8398_0.dtso"},
               ]
             },
+            {
+              :file => "#{$bsp}/arm-cortex_a8-linux-gnu/standalone/release/am335x-boneblack-mscc-fpga.dtb",
+              :overlays => [
+                { :name => "6849_1@bbb", :file => "#{$p_mesa}/meba/dt/meba_lan969x_6849_0.dtso"},
+              ]
+            },
+
         ],
         :fw_env => "/dev/mmcblk1 0x260000 0x20000\n/dev/mmcblk1 0x280000 0x20000\n",
         :rootfs => "#{$bsp}/arm-cortex_a8-linux-gnu/xstax/release/rootfs.tar",
@@ -277,7 +304,7 @@ end
 
 def sys cmd, input = nil
     exception = nil
-    raise "IMGGEN: #{$o[:name]}> Input file: #{input} does not exists!!!" if input and (not File.exists? input)
+    raise "IMGGEN: #{$o[:name]}> Input file: #{input} does not exists!!!" if input and (not File.exist? input)
 
     begin
         stdout, stderr, status = Open3.capture3(cmd)
@@ -315,7 +342,7 @@ def sys cmd, input = nil
             s += "#{stderr}\n"
         end
         if input
-            if File.exists? input
+            if File.exist? input
                 s += "INPUT-FILE-EXISTS: #{input}\n"
             else
                 s += "INPUT-FILE-NO-EXISTS: #{input}\n"

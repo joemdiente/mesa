@@ -42,7 +42,47 @@ static vtss_rc lan966x_fan_rotation_get(vtss_state_t *vtss_state,
     return VTSS_RC_OK;
 }
 #endif
+/* ================================================================= *
+ *  Temperature Sensor
+ * ================================================================= */
+#if defined(VTSS_FEATURE_TEMP_SENSOR)
+static vtss_rc lan966x_temp_sensor_init(vtss_state_t *vtss_state,
+                                    const BOOL enable)
+{
+    // Enable/Disable
+    REG_WRM(CHIP_TOP_PVT_SENSOR_CFG,
+	    enable ? CHIP_TOP_PVT_SENSOR_CFG_SAMPLE_ENA_M : 0,
+	    CHIP_TOP_PVT_SENSOR_CFG_SAMPLE_ENA_M);
 
+    return VTSS_RC_OK;
+}
+
+static vtss_rc lan966x_temp_sensor_get(vtss_state_t *vtss_state,
+                                       i16  *temp_celsius)
+{
+    u32 val;
+    int64_t x, r;
+    int64_t scale = 1e+15;  // Scale factor for calculations
+
+    REG_RD(CHIP_TOP_PVT_SENSOR_STAT, &val);
+    val = CHIP_TOP_PVT_SENSOR_STAT_DATA(val);
+
+    // Convert val to int64_t
+    x = (int64_t)val;
+
+    // Calculate as according to sensor spec
+    r = -34627;                 // -3.4627E-11 * 10^15
+    r = (r * x) + 110230000;    //  1.1023E-7  * 10^15
+    r = (r * x) - 191650000000; // -1.9165E-4  * 10^15
+    r = (r * x) + 3.0604e+14;   //  3.0604E-1  * 10^15
+    r = (r * x) - 5.6197e+16;   // -5.6197E1   * 10^15
+
+    // Convert r back to an integer for temp_celsius
+    *temp_celsius = (i16)(r / scale);
+
+    return VTSS_RC_OK;
+}
+#endif
 /* ================================================================= *
  *  Miscellaneous
  * ================================================================= */
@@ -415,6 +455,7 @@ static vtss_rc lan966x_sgpio_conf_set(vtss_state_t *vtss_state,
 {
 #if defined(GCB_SIO_CFG)
     u32 i, port, val = 0, msk, bmode[2], bit_idx, cfg;
+    bool change = TRUE;
 
     // Serial IO port enable register
     for (port = 0; port < 32; port++) {
@@ -477,11 +518,13 @@ static vtss_rc lan966x_sgpio_conf_set(vtss_state_t *vtss_state,
            GCB_SIO_CLOCK_SYS_CLK_PERIOD(vtss_lan966x_clk_period_ps(vtss_state)/100));
 
     for (port = 0; port < 32; port++) {
+        change = TRUE;
         cfg = GCB_SIO_PORT_CFG_PWM_SOURCE(0);
         for (bit_idx = 0; bit_idx < 4; bit_idx++) {
             val = conf->port_conf[port].mode[bit_idx];
             switch (val) {
             case VTSS_SGPIO_MODE_NO_CHANGE:
+                change = FALSE;
                 break;
             case VTSS_SGPIO_MODE_0_ACTIVITY_INV:
             case VTSS_SGPIO_MODE_1_ACTIVITY_INV:
@@ -497,7 +540,10 @@ static vtss_rc lan966x_sgpio_conf_set(vtss_state_t *vtss_state,
             val = (conf->port_conf[port].int_pol_high[bit_idx] ? 0 : msk);
             REG_WRM(GCB_SIO_INTR_POL(bit_idx), val, msk);
         }
-        REG_WR(GCB_SIO_PORT_CFG(port), cfg);
+
+        if (change) {
+            REG_WR(GCB_SIO_PORT_CFG(port), cfg);
+        }
     }
 #endif
     return VTSS_RC_OK;
@@ -521,6 +567,61 @@ static vtss_rc lan966x_sgpio_read(vtss_state_t *vtss_state,
     return VTSS_RC_OK;
 }
 #endif
+
+// Switch Device PCS signal detect to SGPIO bit mapping.
+// No static SD SIO to DEV mapping.
+// The SIO to DEV (SD) mapping must be set in the below function
+static vtss_rc lan966x_sgpio_sd_map_set(vtss_state_t *vtss_state)
+{
+#if defined(GCB_HW_SGPIO_TO_SD_MAP_CFG)
+    vtss_port_no_t port_no;
+    vtss_port_sgpio_map_t *sd_map;
+    u32 bit_index;
+
+    for (port_no = 0; port_no < vtss_state->port_count; port_no++) {
+        sd_map = &vtss_state->port.map[port_no].sd_map;
+        if (sd_map->action == VTSS_SD_SGPIO_MAP_IGNORE) {
+            // Igonore means default, SD is bit 0 for each SGPIO port
+            bit_index = VTSS_CHIP_PORT(port_no) * 4;
+        } else {
+            /* Each device can be mapped to any of the bit in the SGPIOs which consist of:
+               1  group, 32 ports in each group and 4 bits for each port = 128 bits */
+            bit_index = sd_map->port * 4 + sd_map->bit;
+        }
+        if (bit_index > 128) {
+            VTSS_E("sgpio index %d out of bounds",bit_index);
+            return VTSS_RC_ERROR;
+        }
+        REG_WR(GCB_HW_SGPIO_TO_SD_MAP_CFG(VTSS_CHIP_PORT(port_no)), bit_index);
+    }
+#endif
+    return VTSS_RC_OK;
+}
+
+/* PCS signal detect to GPIO SD mapping  */
+/* Note the map functionality needs to be enabled through GPIO ALT mode */
+static vtss_rc lan966x_gpio_sd_map_set(vtss_state_t *vtss_state)
+{
+#if defined(GCB_GPIO_SD_DEV_MAP)
+    vtss_port_no_t port_no;
+    vtss_gpio_sd_map_t *sd_map;;
+    u32 port;
+
+    for (port_no = 0; port_no < vtss_state->port_count; port_no++) {
+        sd_map = &vtss_state->port.map[port_no].sd_gpio_map;
+        if (!sd_map->enable) {
+            continue;
+        }
+        port = vtss_state->port.map[port_no].chip_port;
+        if (sd_map->sfp_sd > 5) {
+            VTSS_E("SD index %d not supported",sd_map->sfp_sd);
+            return VTSS_RC_ERROR;
+        }
+        REG_WR(GCB_GPIO_SD_DEV_MAP(sd_map->sfp_sd), port);
+    }
+#endif
+    return VTSS_RC_OK;
+}
 
 #if VTSS_OPT_DEBUG_PRINT
 
@@ -615,9 +716,7 @@ vtss_rc vtss_lan966x_misc_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
         state->sgpio_read = lan966x_sgpio_read;
         state->sgpio_event_enable = lan966x_sgpio_event_enable;
         state->sgpio_event_poll = lan966x_sgpio_event_poll;
-        state->sgpio_group_count = VTSS_SGPIO_GROUPS;
 #endif
-        //TBD: state->gpio_count = LAN966X_GPIOS;
         state->dev_all_event_poll = lan966x_dev_all_event_poll;
         state->dev_all_event_enable = lan966x_dev_all_event_enable;
 #if defined(VTSS_FEATURE_INTERRUPTS)
@@ -640,13 +739,19 @@ vtss_rc vtss_lan966x_misc_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
         vtss_state->fan.cool_lvl_set = lan966x_fan_cool_lvl_set;
         vtss_state->fan.rotation_get = lan966x_fan_rotation_get;
 #endif
-        state->gpio_count = VTSS_GPIOS;
+#if defined(VTSS_FEATURE_TEMP_SENSOR)
+        vtss_state->temp_sensor.chip_temp_init = lan966x_temp_sensor_init;
+        vtss_state->temp_sensor.chip_temp_get  = lan966x_temp_sensor_get;
+#endif /* VTSS_FEATURE_TEMP_SENSOR */
         break;
 
     case VTSS_INIT_CMD_POLL:
         VTSS_RC(lan966x_misc_poll_1sec(vtss_state));
         break;
-
+    case VTSS_INIT_CMD_PORT_MAP:
+        VTSS_RC(lan966x_sgpio_sd_map_set(vtss_state));
+        VTSS_RC(lan966x_gpio_sd_map_set(vtss_state));
+        break;
     default:
         break;
     }

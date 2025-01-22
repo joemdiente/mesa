@@ -30,6 +30,8 @@ static vtss_gpio_mode_t to_vtss_gpio_mode(vtss_gpio_func_alt_t alt) {
             return VTSS_GPIO_ALT_1;
         case VTSS_GPIO_FUNC_ALT_2:
             return VTSS_GPIO_ALT_2;
+        default:
+            break;
     }
     return VTSS_GPIO_ALT_0;
 }
@@ -92,6 +94,33 @@ static vtss_rc lan966x_ts_timeofday_get(vtss_state_t     *vtss_state,
                                         u64              *tc)
 {
     return lan966x_ts_domain_timeofday_get(vtss_state, 0, ts, tc);
+}
+
+static vtss_rc lan966x_ts_multi_domain_timeofday_get(vtss_state_t *vtss_state, const uint32_t domain_cnt, vtss_timestamp_t *const ts)
+{
+    uint32_t domain, value;
+    vtss_timestamp_t *t_stamp;
+
+    REG_WRM(PTP_DOM_CFG, PTP_DOM_CFG_TOD_FREEZE(7), PTP_DOM_CFG_TOD_FREEZE_M);
+
+    for (domain = 0; domain < domain_cnt; domain++) {
+        t_stamp = &ts[domain];
+        REG_RD(PTP_CUR_SEC_MSB(domain), &value);
+        t_stamp->sec_msb = PTP_CUR_SEC_MSB_CUR_SEC_MSB_X(value);
+        REG_RD(PTP_CUR_SEC_LSB(domain), &t_stamp->seconds);
+        REG_RD(PTP_CUR_NSEC(domain), &value);
+        t_stamp->nanoseconds = PTP_CUR_NSEC_CUR_NSEC_X(value);
+        if (t_stamp->nanoseconds >= 0x3ffffff0 && t_stamp->nanoseconds <= 0x3fffffff) { /* -1..-16 = 10^9-1..16 */
+            VTSS_RC(vtss_timestampSubSec(t_stamp));
+            t_stamp->nanoseconds = 999999984 + (t_stamp->nanoseconds & 0xf);
+        }
+        REG_RD(PTP_CUR_NSEC_FRAC(domain), &value);
+        t_stamp->nanosecondsfrac = PTP_CUR_NSEC_FRAC_CUR_NSEC_FRAC_X(value) << 8;
+        VTSS_I("domain %u ts sec_msb: %u, seconds: %u, nanoseconds: %u, nanosecondsfrac: %u", domain, t_stamp->sec_msb, t_stamp->seconds, t_stamp->nanoseconds, t_stamp->nanosecondsfrac);
+    }
+
+    REG_WRM(PTP_DOM_CFG, PTP_DOM_CFG_TOD_FREEZE(0), PTP_DOM_CFG_TOD_FREEZE_M);
+    return VTSS_RC_OK;
 }
 
 static vtss_rc lan966x_ts_domain_timeofday_prev_pps_get(vtss_state_t *vtss_state, u32 domain, vtss_timestamp_t *ts)
@@ -254,8 +283,8 @@ static vtss_rc lan966x_ts_external_clock_mode_set(vtss_state_t *vtss_state)
 {
     vtss_ts_ext_clock_mode_t *ext_clock_mode = &vtss_state->ts.conf.ext_clock_mode;
 
-    VTSS_D("one_pps_mode: %u, enable: %u, freq: %u", ext_clock_mode->one_pps_mode, ext_clock_mode->enable, ext_clock_mode->freq);
-    LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
+    VTSS_D("one_pps_mode: %u, enable: %u, freq: %u domain: %u", ext_clock_mode->one_pps_mode, ext_clock_mode->enable, ext_clock_mode->freq, ext_clock_mode->domain);
+    LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, ext_clock_mode->domain);
     if (ext_clock_mode->enable) {
         u32 dividers = HW_NS_PR_SEC/ext_clock_mode->freq;
         u32 high_div = dividers/2;
@@ -266,7 +295,7 @@ static vtss_rc lan966x_ts_external_clock_mode_set(vtss_state_t *vtss_state)
                PTP_WF_LOW_PERIOD_PIN_WFL(low_div));
 
         (void) vtss_lan966x_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN].gpio_no, to_vtss_gpio_mode(ptp_gpio[EXT_CLK_PIN].alt));
-        LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_NOSYNC, 0);
+        LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_NOSYNC, ext_clock_mode->domain);
 
     } else if (ext_clock_mode->one_pps_mode == TS_EXT_CLOCK_MODE_ONE_PPS_OUTPUT) {
         (void) vtss_lan966x_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN].gpio_no, to_vtss_gpio_mode(ptp_gpio[EXT_CLK_PIN].alt));
@@ -274,7 +303,7 @@ static vtss_rc lan966x_ts_external_clock_mode_set(vtss_state_t *vtss_state)
                PTP_WF_HIGH_PERIOD_PIN_WFH(PPS_WIDTH));
         REG_WR(PTP_WF_LOW_PERIOD(EXT_CLK_PIN), 0);
 
-        LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, 0);
+        LAN966X_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, ext_clock_mode->domain);
     } else {
         (void) vtss_lan966x_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN].gpio_no, VTSS_GPIO_IN);
     }
@@ -444,10 +473,11 @@ static vtss_rc lan966x_ts_delay_asymmetry_set(vtss_state_t *vtss_state, vtss_por
     return VTSS_RC_OK;
 }
 
-static vtss_rc lan966x_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no)
+static vtss_rc lan966x_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL mode_domain_config)
 {
-    vtss_ts_mode_t         mode = vtss_state->ts.port_conf[port_no].mode.mode;
-    u32                    domain = vtss_state->ts.port_conf[port_no].mode.domain;
+    vtss_ts_operation_mode_t *o_mode = &vtss_state->ts.port_conf[port_no].mode;
+    vtss_ts_mode_t         mode = o_mode->mode;
+    u32                    domain = o_mode->domain;
     vtss_ts_internal_fmt_t fmt = vtss_state->ts.int_mode.int_fmt;
     u32                    mode_val = 0;
     u32                    port = VTSS_CHIP_PORT(port_no);
@@ -495,6 +525,47 @@ static vtss_rc lan966x_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port
             PTP_DOM_CFG_ENA(1<<domain),
             PTP_DOM_CFG_ENA(1<<domain));
 
+#if defined(VTSS_FEATURE_TIMESTAMP_PCH)
+    u32 tx_pch_mode = 0, rx_pch_mode = 0;
+    switch (o_mode->rx_pch_mode) {
+    case VTSS_TS_PCH_RX_MODE_NONE:
+        rx_pch_mode = 0;
+        break;
+    case VTSS_TS_PCH_RX_MODE_32_0:
+        rx_pch_mode = 1;
+        break;
+    case VTSS_TS_PCH_RX_MODE_28_4:
+        rx_pch_mode = 2;
+        break;
+    case VTSS_TS_PCH_RX_MODE_24_8:
+        rx_pch_mode = 3;
+        break;
+    case VTSS_TS_PCH_RX_MODE_16_16:
+        rx_pch_mode = 4;
+        break;
+    }
+
+    switch (o_mode->tx_pch_mode) {
+    case VTSS_TS_PCH_TX_MODE_NONE:
+        tx_pch_mode = 0;
+        break;
+    case VTSS_TS_PCH_TX_MODE_ENCRYPT_NONE:
+        tx_pch_mode = 1;
+        break;
+    case VTSS_TS_PCH_TX_MODE_ENCRYPT_BIT:
+        tx_pch_mode = 2;
+        break;
+    case VTSS_TS_PCH_TX_MODE_ENCRYPT_BIT_INVERT_SMAC:
+        tx_pch_mode = 3;
+        break;
+    }
+
+    REG_WR(SYS_PCH_CFG(port),
+           SYS_PCH_CFG_PCH_SUB_PORT_ID(o_mode->pch_port_id) |
+           SYS_PCH_CFG_PCH_TX_MODE(tx_pch_mode) |
+           SYS_PCH_CFG_PCH_RX_MODE(rx_pch_mode) |
+           SYS_PCH_CFG_PCH_ERR_MODE(3));
+#endif
     return VTSS_RC_OK;
 }
 
@@ -617,17 +688,18 @@ static vtss_rc lan966x_ts_status_change(vtss_state_t *vtss_state, const vtss_por
 
     VTSS_D("Enter  port_no %d", port_no);
 
-    if (!vtss_state->port.conf_set_called[port_no]) {
+    interface = vtss_state->port.current_if_type[port_no];
+    if (!vtss_state->port.conf_set_called[port_no] || interface == VTSS_PORT_INTERFACE_NO_CONNECTION) {
         VTSS_I("port %d status change called before port is configured", port_no);
         return VTSS_RC_OK;
     }
-    interface = vtss_state->port.current_if_type[port_no];
-    speed = vtss_state->port.current_speed[port_no];
 
+    speed = vtss_state->port.current_speed[port_no];
     port = VTSS_CHIP_PORT(port_no);
 
     VTSS_D("chip_port %u  interface %d  speed %u", port, interface, speed);
     REG_RD(DEV_PCS1G_LINK_STATUS(port), &value);
+
     switch (interface) {
     case VTSS_PORT_INTERFACE_GMII:
         if (speed == VTSS_SPEED_1G) {   /* 1 Gbps */
@@ -635,6 +707,15 @@ static vtss_rc lan966x_ts_status_change(vtss_state_t *vtss_state, const vtss_por
             tx_delay = gmii_delay[port].tx;
             rx_delay += 800 * DEV_PCS1G_LINK_STATUS_DELAY_VAR_X(value);      /* Add the variable delay in the device */
         }
+        break;
+    case VTSS_PORT_INTERFACE_RGMII:
+    case VTSS_PORT_INTERFACE_RGMII_RXID:
+    case VTSS_PORT_INTERFACE_RGMII_TXID:
+    case VTSS_PORT_INTERFACE_RGMII_ID:
+        /* There are currently no delay values calculated by simulation */
+        /* The assumption is that TS is done in the PHY */
+        rx_delay = 100000;
+        tx_delay = 100000;
         break;
     case VTSS_PORT_INTERFACE_SGMII:
     case VTSS_PORT_INTERFACE_SERDES:
@@ -685,11 +766,19 @@ static vtss_rc lan966x_ts_status_change(vtss_state_t *vtss_state, const vtss_por
             rx_delay += (1000 * 18);
             tx_delay += (1000 * 18);
         }
+        if (speed == VTSS_SPEED_100M) { /* 100 Mbps */
+            rx_delay += (1000 * 738);
+            tx_delay += (1000 * 738);
+        }
         break;
     case VTSS_PORT_INTERFACE_QSGMII:
         if (speed == VTSS_SPEED_1G) {   /* 1 Gbps */
             rx_delay += (1000 * 558);
             tx_delay += (1000 * 558);
+        }
+        if (speed == VTSS_SPEED_100M) { /* 100 Mbps */
+            rx_delay += (1000 * 2878);
+            tx_delay += (1000 * 2878);
         }
         break;
     default:
@@ -707,6 +796,10 @@ static vtss_rc lan966x_ts_status_change(vtss_state_t *vtss_state, const vtss_por
     }
     return rc;
 }
+
+#if !defined(VTSS_VOE_CNT)
+#define VTSS_VOE_CNT 8
+#endif
 
 static vtss_rc lan966x_ts_seq_cnt_get(vtss_state_t *vtss_state,  u32 sec_cntr,  u16 *const cnt_val)
 {
@@ -827,6 +920,16 @@ static vtss_rc lan966x_ts_link_up(vtss_state_t *vtss_state, const vtss_port_no_t
     return VTSS_RC_OK;
 }
 
+vtss_rc vtss_cil_ts_conf_set(struct vtss_state_s *vtss_state,
+                             const vtss_ts_conf_t *const conf)
+{
+    REG_WR(ANA_SG_PTP_DOMAIN_CFG, ANA_SG_PTP_DOMAIN_CFG_PTP_DOMAIN(conf->tsn_domain));
+    REG_WR(QSYS_PTP_DOMAIN_CFG, QSYS_PTP_DOMAIN_CFG_PTP_DOMAIN(conf->tsn_domain));
+    return VTSS_RC_OK;
+}
+
+#if VTSS_OPT_DEBUG_PRINT
+
 /* - Debug print --------------------------------------------------- */
 
 static vtss_rc lan966x_debug_ts(vtss_state_t *vtss_state, const vtss_debug_printf_t pr, const vtss_debug_info_t *const info)
@@ -919,6 +1022,7 @@ vtss_rc vtss_lan966x_ts_debug_print(vtss_state_t *vtss_state,
 {
     return vtss_debug_print_group(VTSS_DEBUG_GROUP_TS, lan966x_debug_ts, vtss_state, pr, info);
 }
+#endif // VTSS_OPT_DEBUG_PRINT
 
 /* - Initialization ------------------------------------------------ */
 
@@ -1050,6 +1154,7 @@ vtss_rc vtss_lan966x_ts_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
         state->timestamp_get = lan966x_ts_timestamp_get;
         state->timestamp_id_release = lan966x_ts_timestamp_id_release;
         state->status_change = lan966x_ts_status_change;
+        state->multi_domain_timeofday_get = lan966x_ts_multi_domain_timeofday_get;
         state->domain_timeofday_get = lan966x_ts_domain_timeofday_get;
         state->domain_timeofday_set = lan966x_ts_domain_timeofday_set;
         state->domain_timeofday_set_delta = lan966x_ts_domain_timeofday_set_delta;

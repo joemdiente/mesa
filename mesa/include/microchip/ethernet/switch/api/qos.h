@@ -250,13 +250,24 @@ typedef struct {
 // Shaper Accounting Mode
 typedef enum {
     MESA_SHAPER_MODE_LINE, // Use line-rate for the shaper
-    MESA_SHAPER_MODE_DATA  // Use data-rate for the shaper
+    MESA_SHAPER_MODE_DATA, // Use data-rate for the shaper
+    MESA_SHAPER_MODE_FRAME CAP(QOS_EGRESS_SHAPER_FRAME) // Use frame-rate for the shaper
 } mesa_shaper_mode_t CAP(QOS_EGRESS_SHAPERS_RT);
 
 // Shaper
 typedef struct {
-    mesa_burst_level_t level;          // CBS (Committed Burst Size). Unit: bytes
-    mesa_bitrate_t     rate;           // CIR (Committed Information Rate). Unit: kbps. Use MESA_BITRATE_DISABLED to disable shaper
+    // CBS (Committed Burst Size).
+    // Unit: bytes
+    //
+    // If mode is set to MESA_SHAPER_MODE_FRAME, then unit is number-of-frames
+    mesa_burst_level_t level;
+
+    // CIR (Committed Information Rate).
+    // Unit: kbps. Use MESA_BITRATE_DISABLED to disable shaper
+    //
+    // If mode is set to MESA_SHAPER_MODE_FRAME, then unit is frames/s
+    mesa_bitrate_t     rate;
+
     mesa_burst_level_t ebs CAP(QOS_EGRESS_SHAPERS_DLB); // EBS (Excess Burst Size).  Unit: bytes
     mesa_bitrate_t     eir CAP(QOS_EGRESS_SHAPERS_DLB); // EIR (Excess Information Rate). Unit: kbps. Use MESA_BITRATE_DISABLED to disable DLB
     mesa_shaper_mode_t mode CAP(QOS_EGRESS_SHAPERS_RT); // RT (Rate type)
@@ -271,6 +282,11 @@ typedef struct {
     mesa_bool_t    excess_enable       CAP(QOS_EGRESS_QUEUE_SHAPERS_EB);  // Allow this queue to use excess bandwidth
     mesa_bool_t    cut_through_enable  CAP(QOS_EGRESS_QUEUE_CUT_THROUGH); // Allow this queue to use cut through feature
 } mesa_qos_port_queue_conf_t;
+
+typedef struct {
+    mesa_shaper_t  shaper;  // Egress queue shapers
+    mesa_pct_t     pct;     // The DWRR Queue percentage if DWRR is enabled ('dwrr_enable')
+} mesa_qos_port_ot_queue_conf_t;
 
 // QoS configuration per PORT
 typedef struct {
@@ -289,6 +305,16 @@ typedef struct {
     mesa_qos_ingress_map_id_t  ingress_map CAP(QOS_INGRESS_MAP_CNT); // Ingress map that all frames hit on ingress (see mesa_qos_ingress_map_t). Default is none.
     mesa_qos_egress_map_id_t   egress_map CAP(QOS_EGRESS_MAP_CNT);   // Egress map that all frames hit on egress (see mesa_qos_egress_map_t). Default is none.
     mesa_qos_port_queue_conf_t queue[MESA_QUEUE_ARRAY_SIZE];         // Per priority (QOS class/Queue) configuration
+
+    mesa_bool_t                   ot_dwrr_enable CAP(QOS_OT);                  // Enable DWRR fairness scheduling between OT queues.
+    uint8_t                       ot_dwrr_cnt CAP(QOS_OT);                     // Number of OT queues running in DWRR mode.
+    mesa_qos_port_ot_queue_conf_t ot_queue[MESA_QUEUE_ARRAY_SIZE] CAP(QOS_OT); // Per OT queue configuration
+
+    mesa_bool_t                   ot_it_dwrr_enable CAP(QOS_OT);               // Enable DWRR fairness scheduling between OT and IT traffic.
+    mesa_pct_t                    ot_pct CAP(QOS_OT);                          // The DWRR OT traffic percentage. Rest is IT traffic.
+
+    mesa_shaper_t                 ot_shaper CAP(QOS_OT);                       // Egress OT traffic shapers
+    mesa_shaper_t                 it_shaper CAP(QOS_OT);                       // Egress IT traffic shapers
 } mesa_qos_port_conf_t;
 
 // Get QoS configuration for port.

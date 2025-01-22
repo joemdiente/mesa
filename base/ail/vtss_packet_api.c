@@ -419,10 +419,10 @@ vtss_rc vtss_npi_conf_set(const vtss_inst_t inst, const vtss_npi_conf_t *const c
             rc = vtss_update_masks(vtss_state, 1, 0, 0);    // Update src masks
             /* Update VLAN configuration for old and new NPI port */
             if (rc == VTSS_RC_OK && conf_old.enable) {
-                rc = VTSS_FUNC_COLD(l2.vlan_port_conf_set, conf_old.port_no);
+                rc = VTSS_RC_COLD(vtss_cmn_vlan_port_conf_set(vtss_state, conf_old.port_no));
             }
             if (rc == VTSS_RC_OK && conf->enable) {
-                rc = VTSS_FUNC_COLD(l2.vlan_port_conf_set, conf->port_no);
+                rc = VTSS_RC_COLD(vtss_cmn_vlan_port_conf_set(vtss_state, conf->port_no));
             }
         }
     }
@@ -497,6 +497,11 @@ vtss_rc vtss_packet_inst_create(vtss_state_t *vtss_state)
 {
     vtss_packet_rx_conf_t *rx_conf = &vtss_state->packet.rx_conf;
     u32                   queue;
+
+    if (vtss_state->create_pre) {
+        // Preprocessing
+        return VTSS_RC_OK;
+    }
 
     rx_conf->reg.bpdu_cpu_only = 1;
     /* Enabling SFlow queue has side-effects on some platforms (JR-48), so by default we don't. */
@@ -626,6 +631,7 @@ vtss_rc vtss_cmn_packet_hints_update(const vtss_state_t          *const state,
                                            vtss_packet_rx_info_t *const info)
 {
     const vtss_vlan_port_conf_t *vlan_port_conf = &state->l2.vlan_port_conf[info->port_no];
+    const vtss_vlan_entry_t     *vlan_entry = &state->l2.vlan_table[info->tag.vid];
 
     if (info->port_no == VTSS_PORT_NO_NONE) {
         VTSS_EG(trc_grp, "Internal error");
@@ -668,7 +674,8 @@ vtss_rc vtss_cmn_packet_hints_update(const vtss_state_t          *const state,
         info->hints |= VTSS_PACKET_RX_HINTS_VLAN_FRAME_MISMATCH;
     }
 
-    if (!VTSS_PORT_BF_GET(state->l2.vlan_table[info->tag.vid].member, info->port_no)) {
+    if (!VTSS_PORT_BF_GET(vlan_entry->member, info->port_no) &&
+        (vlan_port_conf->ingress_filter || (vlan_entry->flags & VLAN_FLAGS_FILTER))) {
         info->hints |= VTSS_PACKET_RX_HINTS_VID_MISMATCH;
     }
 
@@ -760,7 +767,11 @@ void vtss_packet_debug_print(vtss_state_t *vtss_state,
     vtss_debug_print_value(pr, "L3_UC",    conf->map.l3_uc_queue);
     vtss_debug_print_value(pr, "L3_OTHER", conf->map.l3_other_queue);
 #endif /* VTSS_FEATURE_LAYER3 */
-
+#if defined(VTSS_FEATURE_REDBOX)
+    if (vtss_state->vtss_features[FEATURE_REDBOX]) {
+        vtss_debug_print_value(pr, "SV",       conf->map.sv_queue);
+    }
+#endif
     pr("\n");
 
     vtss_debug_print_header(pr, "NPI");

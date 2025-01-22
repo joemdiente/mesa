@@ -40,11 +40,35 @@ set(API_MEBA_CACHE_IN)
 list(APPEND API_MEBA_CACHE_IN meba/include/microchip/ethernet/board/api/types.h)
 list(APPEND API_MEBA_CACHE_IN meba/include/microchip/ethernet/board/api/phy.h)
 list(APPEND API_MEBA_CACHE_IN meba/include/microchip/ethernet/board/api/phy_macsec.h)
+list(APPEND API_MEBA_CACHE_IN meba/include/microchip/ethernet/board/api/phy_ts.h)
 list(APPEND API_MEBA_CACHE_IN mepa/include/microchip/ethernet/phy/api/types.h)
 list(APPEND API_MEBA_CACHE_IN mepa/include/microchip/ethernet/phy/api/phy.h)
 list(APPEND API_MEBA_CACHE_IN mepa/include/microchip/ethernet/phy/api/phy_macsec.h)
+list(APPEND API_MEBA_CACHE_IN mepa/include/microchip/ethernet/phy/api/phy_ts.h)
+list(APPEND API_MEBA_CACHE_IN mepa/vtss/include/vtss_phy_types.h)
+list(APPEND API_MEBA_CACHE_IN mepa/vtss/include/vtss_phy_1g_api.h)
+list(APPEND API_MEBA_CACHE_IN mepa/vtss/include/vtss_phy_10g_api.h)
+set(API_MESA_CACHE_AG_IN)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/afi.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/capability.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/clock.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/init.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/l2.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/l3.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/misc.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/mrp.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/packet.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/port.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/qos.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/security.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/synce.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/ts.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/tsn.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/types.h)
+list (APPEND API_MESA_CACHE_AG_IN mesa/include/microchip/ethernet/switch/api/vop.h)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag/mesa-rpc.h ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag/mesa-rpc.c
-                   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../mesa/scripts/ag2.rb -b ${CMAKE_CURRENT_SOURCE_DIR}/../.. -o ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag ${API_MESA_CACHE_IN} ${API_MEBA_CACHE_IN} ${API_ME_CACHE_IN}
+                   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../mesa/scripts/ag2.rb -b ${CMAKE_CURRENT_SOURCE_DIR}/../.. -o ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag ${API_MESA_CACHE_AG_IN} ${API_MEBA_CACHE_IN} ${API_ME_CACHE_IN}
                    DEPENDS mesa_cache
                    COMMENT "Generate mesa-rpc.h/mesa-rpc.c")
 add_custom_target(mesa_rpc_src DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag/mesa-rpc.h ${CMAKE_CURRENT_BINARY_DIR}/mesa-ag/mesa-rpc.c)
@@ -191,7 +215,7 @@ macro(IMG_TARGET)
             add_custom_command(
                 OUTPUT ${A_NAME}.mfi
                 DEPENDS ${KERNEL} ${EXECUTABLES} ${SOLIBS} ${CMAKE_CURRENT_SOURCE_DIR}/imggen.rb
-                COMMAND ${CMAKE_COMMAND} -E env "PATH=${RELOCATED_HOST_DIR}/bin:${RELOCATED_HOST_DIR}/sbin:$ENV{PATH}" ${cmd} -t mfi
+                COMMAND ${CMAKE_COMMAND} -E env "PATH=\"${RELOCATED_HOST_DIR}/bin:${RELOCATED_HOST_DIR}/sbin:$ENV{PATH}\"" ${cmd} -t mfi
                 COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/imggen.rb
             )
             add_custom_target(${A_NAME}_mfi ALL DEPENDS ${A_NAME}.mfi)
@@ -236,14 +260,12 @@ APP_TARGET(NAME app_vsc7549TSN         MESA vsc7549TSN         MEBA meba_sparx5)
 APP_TARGET(NAME app_vsc7546TSN         MESA vsc7546TSN         MEBA meba_sparx5)
 APP_TARGET(NAME app_vsc7558TSN         MESA vsc7558TSN         MEBA meba_sparx5)
 APP_TARGET(NAME app_vsc7556            MESA vsc7556            MEBA meba_sparx5)
+APP_TARGET(NAME app_lan9698RED         MESA lan9698RED         MEBA meba_sparx5)
 APP_TARGET(NAME app_lan966x            MESA lan966x            MEBA meba_lan966x)
 APP_TARGET(NAME app_lan966x_lm         MESA lan966x_lm         MEBA meba_lan966x)
-APP_TARGET(NAME app_lan966x_sr         MESA lan966x_sr         MEBA meba_lan966x)
 APP_TARGET(NAME app_lan966x_ad         MESA lan966x_ad         MEBA meba_lan966x)
-#Joem: My Own Custom Configuration
-APP_TARGET(NAME app_vsc7514-own_board      MESA vsc7514            MEBA meba_own_board)
-APP_TARGET(NAME app_lan966x-own_board      MESA lan966x            MEBA meba_own_board)
-
+APP_TARGET(NAME app_lan969x            MESA lan969x            MEBA meba_sparx5)
+APP_TARGET(NAME app_lan969x_lm         MESA lan969x_lm         MEBA meba_sparx5)
 
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL "mipsel")
     IMG_TARGET(NAME mipsel_vsc7428         TYPE mfi  APP app_vsc7428  MACHINE luton_pcb091   )
@@ -280,7 +302,6 @@ if (CMAKE_SYSTEM_PROCESSOR STREQUAL "mipsel")
 
 elseif (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
         #IMG_TARGET(NAME arm64_ls1046_lan966x     TYPE fit      APP app_lan966x         MACHINE ls1046a)
-        #IMG_TARGET(NAME arm64_ls1046_lan966x_sr  TYPE fit      APP app_lan966x_sr      MACHINE ls1046a)
         #IMG_TARGET(NAME arm64_ls1046_lan966x_ad  TYPE fit      APP app_lan966x_ad      MACHINE ls1046a)
 
         #IMG_TARGET(NAME arm64_ls1046_vsc7468     TYPE fit      APP app_vsc7468         MACHINE ls1046a)
@@ -289,6 +310,8 @@ elseif (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
         IMG_TARGET(NAME arm64_vsc7549TSN         TYPE ext4     APP app_vsc7549TSN      MACHINE fireant)
         IMG_TARGET(NAME arm64_vsc7546TSN         TYPE ext4     APP app_vsc7546TSN      MACHINE fireant)
         IMG_TARGET(NAME arm64_vsc7556            TYPE ext4     APP app_vsc7556         MACHINE fireant)
+        IMG_TARGET(NAME arm64_lan9698RED         TYPE ext4     APP app_lan9698RED      MACHINE lan969x)
+        IMG_TARGET(NAME arm64_lan9698RED_lm      TYPE ext4     APP app_lan969x_lm      MACHINE lan969x)
         #IMG_TARGET(NAME arm64_ls1046_vsc7449     TYPE fit      APP app_vsc7449         MACHINE ls1046a)
         #IMG_TARGET(NAME arm64_ls1046_vsc7437     TYPE fit      APP app_vsc7437         MACHINE ls1046a)
         #IMG_TARGET(NAME arm64_ls1046_vsc7438     TYPE fit      APP app_vsc7438         MACHINE ls1046a)
@@ -306,14 +329,10 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "armv7l")
 
     IMG_TARGET(NAME armv7_lan966x         TYPE fit    APP app_lan966x         MACHINE lan966x)
     IMG_TARGET(NAME armv7_lan966x_lm      TYPE fit    APP app_lan966x_lm      MACHINE lan966x)
-    IMG_TARGET(NAME armv7_lan966x_sr      TYPE fit    APP app_lan966x_sr      MACHINE lan966x)
     IMG_TARGET(NAME armv7_lan966x_ad      TYPE fit    APP app_lan966x_ad      MACHINE lan966x)
-    
-    #Joem: For EVB-LAN9668
-    IMG_TARGET(NAME armv7_lan966x_own_board   TYPE fit    APP app_lan966x-own_board  MACHINE lan966x)
+    IMG_TARGET(NAME armv7_lan969x_bbb     TYPE fit    APP app_lan969x         MACHINE BeagleBoneBlack)
 
     IMG_TARGET(NAME armv7_lan966x_bbb     TYPE fit    APP app_lan966x         MACHINE BeagleBoneBlack)
-    IMG_TARGET(NAME armv7_lan966x_sr_bbb  TYPE fit    APP app_lan966x_sr      MACHINE BeagleBoneBlack)
     IMG_TARGET(NAME armv7_lan966x_ad_bbb  TYPE fit    APP app_lan966x_ad      MACHINE BeagleBoneBlack)
 
 

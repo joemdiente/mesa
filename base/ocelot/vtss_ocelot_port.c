@@ -13,9 +13,9 @@
 
 static BOOL srvl_port_is_internal_phy(u32 chip_port);
 
-static vtss_rc srvl_port_clause_37_control_get(vtss_state_t *vtss_state,
-                                               const vtss_port_no_t port_no,
-                                               vtss_port_clause_37_control_t *const control)
+vtss_rc vtss_cil_port_clause_37_control_get(vtss_state_t *vtss_state,
+                                            const vtss_port_no_t port_no,
+                                            vtss_port_clause_37_control_t *const control)
 {
     u32 value, port = VTSS_CHIP_PORT(port_no);
 
@@ -27,8 +27,8 @@ static vtss_rc srvl_port_clause_37_control_get(vtss_state_t *vtss_state,
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_clause_37_control_set(vtss_state_t *vtss_state,
-                                               const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_clause_37_control_set(vtss_state_t *vtss_state,
+                                            const vtss_port_no_t port_no)
 {
     vtss_port_clause_37_control_t *control = &vtss_state->port.clause_37[port_no];
     u32                           value, port = VTSS_CHIP_PORT(port_no);
@@ -45,9 +45,9 @@ static vtss_rc srvl_port_clause_37_control_set(vtss_state_t *vtss_state,
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_clause_37_status_get(vtss_state_t *vtss_state,
-                                              const vtss_port_no_t         port_no,
-                                              vtss_port_clause_37_status_t *const status)
+vtss_rc vtss_cil_port_clause_37_status_get(vtss_state_t *vtss_state,
+                                           const vtss_port_no_t         port_no,
+                                           vtss_port_clause_37_status_t *const status)
 {
     u32                    value, tgt = VTSS_TO_DEV(vtss_state->port.map[port_no].chip_port);
     vtss_port_sgmii_aneg_t *sgmii_adv = &status->autoneg.partner.sgmii;
@@ -88,7 +88,7 @@ static vtss_rc srvl_port_clause_37_status_get(vtss_state_t *vtss_state,
             (synced_status && !status->autoneg.complete)) {
             SRVL_WRM_CLR(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_CFG(tgt), VTSS_F_DEV_PCS1G_CFG_STATUS_PCS1G_CFG_PCS_ENA);
             SRVL_WRM_SET(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_CFG(tgt), VTSS_F_DEV_PCS1G_CFG_STATUS_PCS1G_CFG_PCS_ENA);
-            (void)srvl_port_clause_37_control_set(vtss_state, port_no); /* Restart Aneg */
+            (void)vtss_cil_port_clause_37_control_set(vtss_state, port_no); /* Restart Aneg */
             VTSS_MSLEEP(50);
             SRVL_RD(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_ANEG_STATUS(tgt), &value);
             status->autoneg.complete = SRVL_BF(DEV_PCS1G_CFG_STATUS_PCS1G_ANEG_STATUS_ANEG_COMPLETE, value);
@@ -982,7 +982,7 @@ static vtss_rc srvl_serdes_inst_get(vtss_state_t *vtss_state,
 // Clock A output maps to Serval RCVRD_CLK0, Clock B output maps to Serval RCVRD_CLK1
 #define RCVRD_CLK_GPIO_NO 20      // on ocelot the 2 recovered clock outputs are GPIO 20-21
 
-static vtss_rc srvl_synce_clock_out_set(vtss_state_t *vtss_state, const u32 clk_port)
+vtss_rc vtss_cil_synce_clock_out_set(vtss_state_t *vtss_state, const u32 clk_port)
 {
     vtss_synce_clock_out_t *conf = &vtss_state->synce.out_conf[clk_port];
     u32 div_mask;
@@ -1025,7 +1025,7 @@ static vtss_rc srvl_synce_clock_out_set(vtss_state_t *vtss_state, const u32 clk_
 // Clock A output maps to Serval RCVRD_CLK0, Clock B output maps to Serval RCVRD_CLK1
 // The recovered clock src is selected from the Serdes type (1G or 6G) and the instance number.
 // The function srvl_serdes_inst_get returns correct serdes type and instance depending on the actual port muxing.
-static vtss_rc srvl_synce_clock_in_set(vtss_state_t *vtss_state, const u32 clk_port)
+vtss_rc vtss_cil_synce_clock_in_set(vtss_state_t *vtss_state, const u32 clk_port)
 {
     vtss_synce_clock_in_t *conf = &vtss_state->synce.in_conf[clk_port];
     vtss_serdes_mode_t    serdes_mode = vtss_state->port.serdes_mode[conf->port_no];
@@ -1089,6 +1089,12 @@ static vtss_rc srvl_synce_clock_in_set(vtss_state_t *vtss_state, const u32 clk_p
     return VTSS_RC_OK;
 }
 
+vtss_rc vtss_cil_synce_station_clk_out_set(vtss_state_t *vtss_state, const vtss_synce_clk_port_t clk_port_par)
+{
+    return VTSS_RC_OK;
+}
+
+
 /* ================================================================= *
  *  Port control
  * ================================================================= */
@@ -1116,11 +1122,11 @@ vtss_rc vtss_srvl_port_max_tags_set(vtss_state_t *vtss_state, vtss_port_no_t por
 }
 
 static vtss_rc srvl_miim_read_write(vtss_state_t *vtss_state,
-                                    BOOL read, 
-                                    u32 miim_controller, 
-                                    u8 miim_addr, 
-                                    u8 addr, 
-                                    u16 *value, 
+                                    BOOL read,
+                                    u32 miim_controller,
+                                    u8 miim_addr,
+                                    u8 addr,
+                                    u16 *value,
                                     BOOL report_errors)
 {
     u32 data, reg_cmd, reg_status, reg_data;
@@ -1151,22 +1157,22 @@ static vtss_rc srvl_miim_read_write(vtss_state_t *vtss_state,
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_miim_read(vtss_state_t *vtss_state,
-                              vtss_miim_controller_t miim_controller, 
-                              u8 miim_addr, 
-                              u8 addr, 
-                              u16 *value, 
-                              BOOL report_errors)
+vtss_rc vtss_cil_miim_read(vtss_state_t *vtss_state,
+                           vtss_miim_controller_t miim_controller,
+                           u8 miim_addr,
+                           u8 addr,
+                           u16 *value,
+                           BOOL report_errors)
 {
     return srvl_miim_read_write(vtss_state, TRUE, miim_controller, miim_addr, addr, value, report_errors);
 }
 
-static vtss_rc srvl_miim_write(vtss_state_t *vtss_state,
-                               vtss_miim_controller_t miim_controller, 
-                               u8 miim_addr, 
-                               u8 addr, 
-                               u16 value, 
-                               BOOL report_errors)
+vtss_rc vtss_cil_miim_write(vtss_state_t *vtss_state,
+                            vtss_miim_controller_t miim_controller,
+                            u8 miim_addr,
+                            u8 addr,
+                            u16 value,
+                            BOOL report_errors)
 {
     return srvl_miim_read_write(vtss_state, FALSE, miim_controller, miim_addr, addr, &value, report_errors);
 }
@@ -1243,23 +1249,23 @@ static vtss_rc srvl_mmd_cmd(vtss_state_t *vtss_state,
 
 
 
-static vtss_rc srvl_mmd_read(vtss_state_t *vtss_state,
-                             vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                             u16 addr, u16 *value, BOOL report_errors)
+vtss_rc vtss_cil_mmd_read(vtss_state_t *vtss_state,
+                          vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
+                          u16 addr, u16 *value, BOOL report_errors)
 {
     return srvl_mmd_cmd(vtss_state, PHY_CMD_READ, miim_controller, miim_addr, mmd, addr, value, report_errors);
 }
 
-static vtss_rc srvl_mmd_write(vtss_state_t *vtss_state,
-                              vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                              u16 addr, u16 value, BOOL report_errors)
+vtss_rc vtss_cil_mmd_write(vtss_state_t *vtss_state,
+                           vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
+                           u16 addr, u16 value, BOOL report_errors)
 {
     return srvl_mmd_cmd(vtss_state, PHY_CMD_WRITE, miim_controller, miim_addr, mmd, addr, &value, report_errors);
 }
 
-static vtss_rc srvl_mmd_read_inc(vtss_state_t *vtss_state,
-                                 vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                                 u16 addr, u16 *buf, u8 count, BOOL report_errors)
+vtss_rc vtss_cil_mmd_read_inc(vtss_state_t *vtss_state,
+                              vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
+                              u16 addr, u16 *buf, u8 count, BOOL report_errors)
 {
     while (count > 1) {
         VTSS_RC(srvl_mmd_cmd(vtss_state, PHY_CMD_READ_INC, miim_controller, miim_addr, mmd, addr, buf, report_errors));
@@ -1448,8 +1454,8 @@ static vtss_rc srvl_port_fc_setup(vtss_state_t *vtss_state, u32 port, vtss_port_
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_conf_get(vtss_state_t *vtss_state,
-                                  const vtss_port_no_t port_no, vtss_port_conf_t *const conf)
+vtss_rc vtss_cil_port_conf_get(vtss_state_t *vtss_state,
+                               const vtss_port_no_t port_no, vtss_port_conf_t *const conf)
 {
     u32 port = VTSS_CHIP_PORT(port_no);
     u32 tgt = VTSS_TO_DEV(port);
@@ -1503,14 +1509,14 @@ static vtss_rc srvl_serdes_cfg(vtss_state_t *vtss_state, const vtss_port_no_t po
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     vtss_port_conf_t       *conf = &vtss_state->port.conf[port_no];
     u32                    port = VTSS_CHIP_PORT(port_no);
     u32                    link_speed, value, tgt = VTSS_TO_DEV(port), delay = 0;
     u32                    q, pfc_mask = 0;
     vtss_port_frame_gaps_t gaps;
-    vtss_port_speed_t      speed = conf->speed;
+    vtss_port_speed_t      speed = conf->speed, skip_port_flush = 0;
     BOOL                   fdx = conf->fdx, disable = conf->power_down;
     BOOL                   sgmii = 0, if_100fx = 0;
     vtss_serdes_mode_t     mode = VTSS_SERDES_MODE_SGMII;   
@@ -1521,6 +1527,11 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
         SRVL_WRM_CTL(VTSS_DEVCPU_GCB_PHY_PHY_CFG,
                      conf->if_type == VTSS_PORT_INTERFACE_SGMII,
                      VTSS_F_DEVCPU_GCB_PHY_PHY_CFG_PHY_ENA(VTSS_BIT(port)));
+    }
+    if (srvl_port_is_internal_phy(port) &&
+        (disable || vtss_state->port.current_pd[port_no])) {
+        // ports with internal phys are not flushed during power_up/down
+        skip_port_flush = 1;
     }
 
     /* Verify speed and interface type */
@@ -1547,23 +1558,25 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
     case VTSS_PORT_INTERFACE_INTERNAL:
     case VTSS_PORT_INTERFACE_RGMII:
     case VTSS_PORT_INTERFACE_SGMII:
+    case VTSS_PORT_INTERFACE_SGMII_2G5:
+        mode = (speed == VTSS_SPEED_2500M ? VTSS_SERDES_MODE_2G5 : VTSS_SERDES_MODE_SGMII);
         sgmii = 1;
         break;
     case VTSS_PORT_INTERFACE_QSGMII:
         mode = VTSS_SERDES_MODE_QSGMII;
-        if ((port % 4) == 0) {
-            // BZ23738
-            BOOL p3_in_map = FALSE;
-            SRVL_WRM_CLR(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV((port + 1))), VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_TX_RST);
-            SRVL_WRM_CLR(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV((port + 2))), VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_TX_RST);
-            for (u32 p = VTSS_PORT_NO_START; p < vtss_state->port_count; p++) {
-                if (vtss_state->port.map[p].chip_port == port + 3)
-                    p3_in_map = TRUE;
-            }
-            if (!p3_in_map) {
-                SRVL_WR(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV((port + 3))), 0x1);
-            } else {
-                SRVL_WRM_CLR(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV((port + 3))), VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_TX_RST);
+        if (vtss_state->port.current_if_type[port_no] == VTSS_PORT_INTERFACE_NO_CONNECTION) {
+            // APPL-5321
+            u32 t, p = (port / 4) * 4;
+            for (u32 cnt = 0; cnt < 4; cnt++) {
+                t = p + cnt;
+                SRVL_RD(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV(t)), &value);
+                if (value == 0xFC) {
+                    SRVL_WRM_CLR(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV(t)),
+                                 VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_TX_RST);
+                    SRVL_WRM(VTSS_DEV_PORT_MODE_CLOCK_CFG(VTSS_TO_DEV(t)),
+                             VTSS_F_DEV_PORT_MODE_CLOCK_CFG_LINK_SPEED(1),
+                             VTSS_M_DEV_PORT_MODE_CLOCK_CFG_LINK_SPEED);
+                }
             }
         }
         break;
@@ -1615,11 +1628,13 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
                      VTSS_F_DEV_PCS1G_CFG_STATUS_PCS1G_LB_CFG_TBI_HOST_LB_ENA);
 
         // Notify link partner
-        srvl_port_clause_37_control_set(vtss_state, port_no);
+        vtss_cil_port_clause_37_control_set(vtss_state, port_no);
 
         if (conf->if_type != VTSS_PORT_INTERFACE_QSGMII) {
             VTSS_RC(srvl_serdes_cfg(vtss_state, port_no, VTSS_SERDES_MODE_IDLE));
         }
+
+        vtss_state->port.current_pd[port_no] = vtss_state->port.conf[port_no].power_down;
         return VTSS_RC_OK; // Nothing else needs to be disabled
     }
 
@@ -1633,74 +1648,77 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
     SRVL_RD(VTSS_SYS_STAT_CNT(0x40), &cnt[0]); // tx_bytes
     SRVL_RD(VTSS_SYS_STAT_CNT(0x41), &cnt[1]); // tx_unicast
 
-    /* ********************************* */
-    /* Port disable and flush procedure: */
-    /* ********************************* */
-    /* 1: Reset the PCS Rx clock domain  */
-    SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
-                 VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_RX_RST);
+    if (!skip_port_flush) {
+        /* ********************************* */
+        /* Port disable and flush procedure: */
+        /* ********************************* */
+        /* 1: Reset the PCS Rx clock domain  */
+        SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PCS_RX_RST);
 
-    /* 2: Disable MAC frame reception */
-    SRVL_WRM_CLR(VTSS_DEV_MAC_CFG_STATUS_MAC_ENA_CFG(tgt),
-                 VTSS_F_DEV_MAC_CFG_STATUS_MAC_ENA_CFG_RX_ENA);
+        /* 2: Disable MAC frame reception */
+        SRVL_WRM_CLR(VTSS_DEV_MAC_CFG_STATUS_MAC_ENA_CFG(tgt),
+                     VTSS_F_DEV_MAC_CFG_STATUS_MAC_ENA_CFG_RX_ENA);
 
-    /* 3: Disable traffic being sent to or from switch port */
-    SRVL_WRM_CLR(VTSS_QSYS_SYSTEM_SWITCH_PORT_MODE(port),
-                 VTSS_F_QSYS_SYSTEM_SWITCH_PORT_MODE_PORT_ENA);
+        /* 3: Disable traffic being sent to or from switch port */
+        SRVL_WRM_CLR(VTSS_QSYS_SYSTEM_SWITCH_PORT_MODE(port),
+                     VTSS_F_QSYS_SYSTEM_SWITCH_PORT_MODE_PORT_ENA);
 
-    /* 4: Disable dequeuing from the egress queues  */
-    SRVL_WRM_SET(VTSS_QSYS_SYSTEM_PORT_MODE(port),
-                VTSS_F_QSYS_SYSTEM_PORT_MODE_DEQUEUE_DIS);
+        /* 4: Disable dequeuing from the egress queues  */
+        SRVL_WRM_SET(VTSS_QSYS_SYSTEM_PORT_MODE(port),
+                     VTSS_F_QSYS_SYSTEM_PORT_MODE_DEQUEUE_DIS);
 
-    /* 5: Disable Flowcontrol */
-    SRVL_WRM_CLR(VTSS_SYS_PAUSE_CFG_PAUSE_CFG(port),  VTSS_F_SYS_PAUSE_CFG_PAUSE_CFG_PAUSE_ENA);
+        /* 5: Disable Flowcontrol */
+        SRVL_WRM_CLR(VTSS_SYS_PAUSE_CFG_PAUSE_CFG(port),  VTSS_F_SYS_PAUSE_CFG_PAUSE_CFG_PAUSE_ENA);
 
-    /* 5.1: Disable PFC */
-    SRVL_WRM(VTSS_QSYS_SYSTEM_SWITCH_PORT_MODE(port),
-             VTSS_F_QSYS_SYSTEM_SWITCH_PORT_MODE_TX_PFC_ENA(0),
-             VTSS_M_QSYS_SYSTEM_SWITCH_PORT_MODE_TX_PFC_ENA)
+        /* 5.1: Disable PFC */
+        SRVL_WRM(VTSS_QSYS_SYSTEM_SWITCH_PORT_MODE(port),
+                 VTSS_F_QSYS_SYSTEM_SWITCH_PORT_MODE_TX_PFC_ENA(0),
+                 VTSS_M_QSYS_SYSTEM_SWITCH_PORT_MODE_TX_PFC_ENA)
 
-    /* 6: Wait a worst case time 8ms (jumbo/10Mbit) */
-    VTSS_MSLEEP(8);
+            /* 6: Wait a worst case time 8ms (jumbo/10Mbit) */
+            VTSS_MSLEEP(8);
 
-    /* 7: Disable HDX backpressure (Bugzilla 3203) */
-    SRVL_WRM_CLR(VTSS_SYS_SYSTEM_FRONT_PORT_MODE(port), 
-                 VTSS_F_SYS_SYSTEM_FRONT_PORT_MODE_HDX_MODE);
-   
-    /* 8: Flush the queues accociated with the port */
-    SRVL_WRM_SET(VTSS_REW_PORT_PORT_CFG(port), 
-                 VTSS_F_REW_PORT_PORT_CFG_FLUSH_ENA);
+        /* 7: Disable HDX backpressure (Bugzilla 3203) */
+        SRVL_WRM_CLR(VTSS_SYS_SYSTEM_FRONT_PORT_MODE(port),
+                     VTSS_F_SYS_SYSTEM_FRONT_PORT_MODE_HDX_MODE);
 
-    /* 9: Enable dequeuing from the egress queues */
-    SRVL_WRM_CLR(VTSS_QSYS_SYSTEM_PORT_MODE(port),
-                VTSS_F_QSYS_SYSTEM_PORT_MODE_DEQUEUE_DIS);
+        /* 8: Flush the queues accociated with the port */
+        SRVL_WRM_SET(VTSS_REW_PORT_PORT_CFG(port),
+                     VTSS_F_REW_PORT_PORT_CFG_FLUSH_ENA);
 
-    /* 10: Wait until flushing is complete */
-    do { 
-        SRVL_RD(VTSS_QSYS_SYSTEM_SW_STATUS(port), &value);
-        VTSS_MSLEEP(1);            
-        delay++;
-        if (delay == 2000) {
-            VTSS_E("Rev 3. Flush timeout chip port %u",port);
-            break;
-        }
-    } while (value & VTSS_M_QSYS_SYSTEM_SW_STATUS_EQ_AVAIL);
+        /* 9: Enable dequeuing from the egress queues */
+        SRVL_WRM_CLR(VTSS_QSYS_SYSTEM_PORT_MODE(port),
+                     VTSS_F_QSYS_SYSTEM_PORT_MODE_DEQUEUE_DIS);
 
-    /* 11: Reset the Port and MAC clock domains */
-    SRVL_WRM_CLR(VTSS_DEV_MAC_CFG_STATUS_MAC_ENA_CFG(tgt),
-            VTSS_F_DEV_MAC_CFG_STATUS_MAC_ENA_CFG_TX_ENA); /* Bugzilla#19076 */
-    SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
-            VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PORT_RST);
-    VTSS_MSLEEP(1);
-    SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
-            VTSS_F_DEV_PORT_MODE_CLOCK_CFG_MAC_TX_RST |
-            VTSS_F_DEV_PORT_MODE_CLOCK_CFG_MAC_RX_RST |
-            VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PORT_RST);
+        /* 10: Wait until flushing is complete */
+        do {
+            SRVL_RD(VTSS_QSYS_SYSTEM_SW_STATUS(port), &value);
+            VTSS_MSLEEP(1);
+            delay++;
+            if (delay == 2000) {
+                VTSS_E("Rev 3. Flush timeout chip port %u",port);
+                break;
+            }
+        } while (value & VTSS_M_QSYS_SYSTEM_SW_STATUS_EQ_AVAIL);
 
-    /* 12: Clear flushing */
-    SRVL_WRM_CLR(VTSS_REW_PORT_PORT_CFG(port), VTSS_F_REW_PORT_PORT_CFG_FLUSH_ENA);
+        /* 11: Reset the Port and MAC clock domains */
+        SRVL_WRM_CLR(VTSS_DEV_MAC_CFG_STATUS_MAC_ENA_CFG(tgt),
+                     VTSS_F_DEV_MAC_CFG_STATUS_MAC_ENA_CFG_TX_ENA); /* Bugzilla#19076 */
+        SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PORT_RST);
+        VTSS_MSLEEP(1);
+        SRVL_WRM_SET(VTSS_DEV_PORT_MODE_CLOCK_CFG(tgt),
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_MAC_TX_RST |
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_MAC_RX_RST |
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_LINK_SPEED(1) |
+                     VTSS_F_DEV_PORT_MODE_CLOCK_CFG_PORT_RST);
 
-    /* The port is disabled and flushed, now set up the port in the new operating mode */
+        /* 12: Clear flushing */
+        SRVL_WRM_CLR(VTSS_REW_PORT_PORT_CFG(port), VTSS_F_REW_PORT_PORT_CFG_FLUSH_ENA);
+
+        /* The port is disabled and flushed, now set up the port in the new operating mode */
+    }
 
     /* Re-Configure the Serdes macros */
     if (mode != vtss_state->port.serdes_mode[port_no]) {
@@ -1820,7 +1838,7 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
         SRVL_WR(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_CFG(tgt), 
                 disable ? 0 : VTSS_F_DEV_PCS1G_CFG_STATUS_PCS1G_CFG_PCS_ENA);
         
-        if (conf->if_type == VTSS_PORT_INTERFACE_SGMII) {
+        if (conf->if_type == VTSS_PORT_INTERFACE_SGMII || conf->if_type == VTSS_PORT_INTERFACE_SGMII_2G5) {
             SRVL_WR(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_ANEG_CFG(tgt), 0);
         } else if (conf->if_type == VTSS_PORT_INTERFACE_SGMII_CISCO) {
             /* Complete SGMII aneg */
@@ -1834,7 +1852,7 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
             SRVL_WR(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_STICKY(tgt), value);
         }
         //Update vtss_state database accordingly
-        srvl_port_clause_37_control_get(vtss_state,port_no,&(vtss_state->port.clause_37[port_no]));
+        vtss_cil_port_clause_37_control_get(vtss_state,port_no,&(vtss_state->port.clause_37[port_no]));
     }
 
     SRVL_WRM_CTL(VTSS_DEV_PCS1G_CFG_STATUS_PCS1G_LB_CFG(tgt), 
@@ -1883,11 +1901,13 @@ static vtss_rc srvl_port_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t
         VTSS_RC(vtss_srvl_qos_port_conf_change(vtss_state, port_no, port, link_speed));
     }
 
+    vtss_state->port.current_if_type[port_no] = vtss_state->port.conf[port_no].if_type;
+    vtss_state->port.current_pd[port_no] = vtss_state->port.conf[port_no].power_down;
     return VTSS_RC_OK;
 }
 
 
-static vtss_rc srvl_port_ifh_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_ifh_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     u32 port               = VTSS_CHIP_PORT(port_no);
     vtss_port_ifh_t *ifh = &vtss_state->port.ifh_conf[port_no];
@@ -1904,9 +1924,9 @@ static vtss_rc srvl_port_ifh_set(vtss_state_t *vtss_state, const vtss_port_no_t 
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_status_get(vtss_state_t *vtss_state,
-                                    const vtss_port_no_t  port_no, 
-                                    vtss_port_status_t    *const status)
+vtss_rc vtss_cil_port_status_get(vtss_state_t *vtss_state,
+                                 const vtss_port_no_t  port_no,
+                                 vtss_port_status_t    *const status)
 {
     vtss_port_conf_t *conf = &vtss_state->port.conf[port_no];
     u32              tgt = VTSS_TO_DEV(vtss_state->port.map[port_no].chip_port);
@@ -2164,9 +2184,9 @@ static vtss_rc srvl_port_counters_read(vtss_state_t                 *vtss_state,
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_basic_counters_get(vtss_state_t *vtss_state,
-                                            const vtss_port_no_t port_no,
-                                            vtss_basic_counters_t *const counters)
+vtss_rc vtss_cil_port_basic_counters_get(vtss_state_t *vtss_state,
+                                         const vtss_port_no_t port_no,
+                                         vtss_basic_counters_t *const counters)
 {
     u32                          base, *p = &base, port = VTSS_CHIP_PORT(port_no);
     vtss_port_luton26_counters_t *c = &vtss_state->port.counters[port_no].counter.luton26;
@@ -2220,30 +2240,37 @@ static vtss_rc srvl_port_counters_cmd(vtss_state_t                *vtss_state,
                                    clear);
 }
 
-static vtss_rc srvl_port_counters_update(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_counters_update(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     return srvl_port_counters_cmd(vtss_state, port_no, NULL, 0);
 }
 
-static vtss_rc srvl_port_counters_clear(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_counters_clear(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     return srvl_port_counters_cmd(vtss_state, port_no, NULL, 1);
 }
 
-static vtss_rc srvl_port_counters_get(vtss_state_t *vtss_state,
-                                      const vtss_port_no_t port_no,
-                                      vtss_port_counters_t *const counters)
+vtss_rc vtss_cil_port_counters_get(vtss_state_t *vtss_state,
+                                   const vtss_port_no_t port_no,
+                                   vtss_port_counters_t *const counters)
 {
     VTSS_MEMSET(counters, 0, sizeof(*counters));
     return srvl_port_counters_cmd(vtss_state, port_no, counters, 0);
 }
 
-static vtss_rc srvl_port_forward_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_forward_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
     return VTSS_RC_OK;
 }
 
-static vtss_rc srvl_port_test_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
+vtss_rc vtss_cil_port_serdes_debug(vtss_state_t *vtss_state, const vtss_port_no_t port_no,
+                                   const vtss_port_serdes_debug_t *const conf)
+{
+    return VTSS_RC_OK;
+}
+
+
+vtss_rc vtss_cil_port_test_conf_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no)
 {
 #if defined(VTSS_FEATURE_SERDES_MACRO_SETTINGS)
     u32                   inst, addr, port = VTSS_CHIP_PORT(port_no);
@@ -3038,34 +3065,10 @@ vtss_rc vtss_srvl_port_debug_print(vtss_state_t *vtss_state,
 
 vtss_rc vtss_srvl_port_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
 {
-    vtss_port_state_t *state = &vtss_state->port;
     u32               port;
 
     switch (cmd) {
     case VTSS_INIT_CMD_CREATE:
-        state->miim_read = srvl_miim_read;
-        state->miim_write = srvl_miim_write;
-        state->mmd_read = srvl_mmd_read;
-        state->mmd_read_inc = srvl_mmd_read_inc;
-        state->mmd_write = srvl_mmd_write;
-        state->conf_get = srvl_port_conf_get;
-        state->conf_set = srvl_port_conf_set;
-        state->clause_37_status_get = srvl_port_clause_37_status_get;
-        state->clause_37_control_get = srvl_port_clause_37_control_get;
-        state->clause_37_control_set = srvl_port_clause_37_control_set;
-        state->status_get = srvl_port_status_get;
-        state->counters_update = srvl_port_counters_update;
-        state->counters_clear = srvl_port_counters_clear;
-        state->counters_get = srvl_port_counters_get;
-        state->basic_counters_get = srvl_port_basic_counters_get;
-        state->ifh_set = srvl_port_ifh_set;
-        state->forward_set = srvl_port_forward_set;
-        state->test_conf_set = srvl_port_test_conf_set;
-#if defined(VTSS_FEATURE_SYNCE)
-        /* SYNCE features */
-        vtss_state->synce.clock_out_set = srvl_synce_clock_out_set;
-        vtss_state->synce.clock_in_set = srvl_synce_clock_in_set;
-#endif /* VTSS_FEATURE_SYNCE */
         break;
     case VTSS_INIT_CMD_INIT:
     /* Set up the Serdes1g/Serdes6g macro muxing based on the selected mux mode.

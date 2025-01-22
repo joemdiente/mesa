@@ -43,7 +43,7 @@ mepa_rc meba_phy_macsec_init_get(meba_inst_t inst,mepa_port_no_t port_no, mepa_m
     return mepa_macsec_init_get(inst->phy_devices[port_no], macsec_init);
 }
 
-mepa_rc meba_phy_macsec_secy_conf_add(meba_inst_t inst, mepa_port_no_t port_no, mepa_macsec_port_t port, mepa_macsec_secy_conf_t *const conf)
+mepa_rc meba_phy_macsec_secy_conf_add(meba_inst_t inst, mepa_port_no_t port_no, mepa_macsec_port_t port, const mepa_macsec_secy_conf_t *const conf)
 {
     mesa_rc rc = MESA_RC_ERROR;
 
@@ -723,7 +723,7 @@ mepa_rc meba_phy_macsec_mtu_get(meba_inst_t inst, const mepa_port_no_t port_no, 
         return rc;
     }
 
-    return mepa_macsec_mtu_set(inst->phy_devices[port_no], port_no, mtu_conf);
+    return mepa_macsec_mtu_get(inst->phy_devices[port_no], port_no, mtu_conf);
 }
 
 mepa_rc meba_phy_macsec_frame_capture_set(meba_inst_t inst, const mepa_port_no_t port_no, const mepa_macsec_frame_capture_t capture)

@@ -31,6 +31,7 @@ typedef struct {
 
 /** \brief  Timestamp block clock frequencies */
 typedef enum {
+    MEPA_TS_CLOCK_FREQ_25M,    /**< 25 MHz */
     MEPA_TS_CLOCK_FREQ_125M,   /**< 125 MHz */
     MEPA_TS_CLOCK_FREQ_15625M, /**< 156.25 MHz */
     MEPA_TS_CLOCK_FREQ_200M,   /**< 200 MHz */
@@ -112,7 +113,6 @@ typedef struct {
 /** \brief Local TIME Counter Load/Save Enable commands */
 typedef enum {
     MEPA_TS_CMD_LOAD,
-    MEPA_TS_CMD_LOAD_ON_PPS,
     MEPA_TS_CMD_SAVE,
     MEPA_TS_ADJ_CMD_CLEAR,
 } mepa_ts_ls_type_t;
@@ -155,7 +155,7 @@ typedef struct {
     mepa_bool_t                   auto_clear_ls;
     mepa_ts_tc_op_mode_t          tc_op_mode;       /**< TC operating mode */
     mepa_bool_t                   dly_req_recv_10byte_ts; /**< Store 10-byte ingress timestamp for delay request message. Used for auto delay req/response. */
-    mepa_bool_t                   framepreempt_en;  /**< Frame Preemption*/
+    mepa_bool_t                   tx_auto_followup_ts; /**< If true, PHY will insert timestamp in follow-up message instead of generating interrupt to application. */
 } mepa_ts_init_conf_t;
 
 /** \brief PHY timestamp unit reset */
@@ -170,7 +170,8 @@ typedef struct {
 typedef enum {
     MEPA_TS_ENCAP_NONE,
     MEPA_TS_ENCAP_ETH_PTP,
-    MEPA_TS_ENCAP_ETH_IP_PTP
+    MEPA_TS_ENCAP_ETH_IP_PTP,
+    MEPA_TS_ENCAP_ETH_HSR_PTP,
 } mepa_ts_pkt_encap_t;
 
 /** \brief Match PTP Packet MAC types */
@@ -345,6 +346,12 @@ typedef enum {
     MEPA_TS_FIFO_SUCCESS,
     MEPA_TS_FIFO_OVERFLOW,
 } mepa_ts_fifo_status_t;
+
+#define MEPA_TS_FIFO_MAX_ENTRIES 8 //In all existing phys, maximum number of FIFO entries is 8.
+typedef struct {
+    mepa_ts_fifo_sig_t sig;
+    mepa_timestamp_t ts;
+} mepa_fifo_ts_entry_t;
 
 /** \brief PTP Sample tests */
 typedef struct {
@@ -807,21 +814,21 @@ mepa_rc mepa_ts_event_poll(struct mepa_device                     *dev,
                            mepa_ts_event_t                        *const status);
 
 /**
- *  \brief callback after reading the timestamp FIFO entry
+ *  \brief Get FIFO timestamp entries.
  *
  *  \param port_no [IN]  Port number.
- *  \param ts      [IN]  PHY timestamp.
- *  \param sig     [IN]  Timestamp FIFO signature entry.
- *  \param status  [OUT] Timestamp FIFO status.
+ *  \param ts_list [IN]  PHY FIFO timestamp list.
+ *  \param size    [IN]  size of ts_list passed as input argument.
+ *  \param num     [OUT] Number of Timestamp entries read from FIFO.
  *
  *  \return
  *       MEPA_RC_OK on success.\n
  *       MEPA_RC_ERROR on error.
  **/
-void mepa_ts_fifo_read(mepa_port_no_t                              port_no,
-                       const mepa_timestamp_t                     *const ts,
-                       const mepa_ts_fifo_sig_t                   *const sig,
-                       const mepa_ts_fifo_status_t                 status);
+mepa_rc mepa_ts_fifo_get(struct mepa_device   *dev,
+                         mepa_fifo_ts_entry_t ts_list[],
+                         const size_t         size,
+                         uint32_t             *const num);
 
 /** \brief callback after reading the timestamp FIFO entry */
 typedef void (*mepa_ts_fifo_read_t)(mepa_port_no_t              port_no,

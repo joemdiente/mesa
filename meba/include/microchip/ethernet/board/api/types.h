@@ -85,6 +85,18 @@ typedef mesa_port_admin_state_t meba_port_admin_state_t;
 // care, and a MAC-to-MAC driver should be used right away (copper backplane).
 #define MEBA_PORT_CAP_SFP_INACCESSIBLE  0x200000000
 
+// Port supports dynamic interface changes (run-time) which requires
+// reconfiguration of the switch core calendars.
+// The dynamic ports comes in groups of 4 were a typical change
+// is between 4 x QSGMII <--> 1 x SFI
+#define MEBA_PORT_CAP_DYNAMIC           0x400000000
+
+// Dummy SW phy is used - no MIIM access
+#define MEBA_PORT_CAP_DUMMY_PHY         0x800000000
+
+// Supports in-band-status through SGMII control word
+#define MEBA_PORT_CAP_IN_BAND_STATUS      0x1000000000
+
 #define MEBA_PORT_CAP_HDX        \
         (MEBA_PORT_CAP_10M_HDX | \
          MEBA_PORT_CAP_100M_HDX)
@@ -220,27 +232,27 @@ typedef uint64_t meba_port_cap_t;
 
 typedef enum {
     // Initialize Board
-    MEBA_BOARD_INITIALIZE,
+    MEBA_BOARD_INITIALIZE, // 0
     // Global Port Reset
-    MEBA_PORT_RESET,
+    MEBA_PORT_RESET, // 1
     // Global Port Post Reset
-    MEBA_PORT_RESET_POST,
+    MEBA_PORT_RESET_POST, // 2
     // Status LED Initialize
-    MEBA_STATUS_LED_INITIALIZE,
+    MEBA_STATUS_LED_INITIALIZE, // 3
     // Port LED Initialize
-    MEBA_PORT_LED_INITIALIZE,
+    MEBA_PORT_LED_INITIALIZE, // 4
     // Fan Initialize
-    MEBA_FAN_INITIALIZE,
+    MEBA_FAN_INITIALIZE, // 5
     // Sensors Initialize
-    MEBA_SENSOR_INITIALIZE,
+    MEBA_SENSOR_INITIALIZE, // 6
     // Interrupts Initialize
-    MEBA_INTERRUPT_INITIALIZE,
+    MEBA_INTERRUPT_INITIALIZE, // 7
     // Initialize the SyncE DPLL i.e. setup dividers, references, monitors etc.
-    MEBA_SYNCE_DPLL_INITIALIZE,
+    MEBA_SYNCE_DPLL_INITIALIZE, // 8
     // PoE Initialize
-    MEBA_POE_INITIALIZE,
+    MEBA_POE_INITIALIZE, // 9
     // Phy Initialize
-    MEBA_PHY_INITIALIZE
+    MEBA_PHY_INITIALIZE // 10
 } meba_reset_point_t;
 
 typedef enum {
@@ -324,6 +336,8 @@ typedef enum {
     // Number of exposed (external) ports directly connected to the CPU
     MEBA_CAP_CPU_PORTS_COUNT,
 
+    // For backwards compatibility, add new capabilities here!
+
     MEBA_CAP_LAST   // Last MEBA capability (must be last in list)
 } meba_cap_t;
 
@@ -361,62 +375,64 @@ typedef enum {
     MEBA_EVENT_LOS = MEBA_EVENT_FIRST,
 
     // Fast link failure detect on PHY (Enzo - Atom)
-    MEBA_EVENT_FLNK,
+    MEBA_EVENT_FLNK,  // 1
 
     // Automatic Media-Sence on PHY
-    MEBA_EVENT_AMS,
+    MEBA_EVENT_AMS,  // 2
 
     // VOE interrupt
-    MEBA_EVENT_VOE,
+    MEBA_EVENT_VOE, // 3
 
     // PTP Synchronization pulse update
-    MEBA_EVENT_SYNC,
+    MEBA_EVENT_SYNC, // 4
 
     // PTP External Synchronization input
-    MEBA_EVENT_EXT_SYNC,
+    MEBA_EVENT_EXT_SYNC, // 5
 
     // PTP External Synchronization 1 input (Serval only)
-    MEBA_EVENT_EXT_1_SYNC,
+    MEBA_EVENT_EXT_1_SYNC, // 6
 
     // PTP Clock adjustment updated
-    MEBA_EVENT_CLK_ADJ,
+    MEBA_EVENT_CLK_ADJ, // 7
 
     // PTP Clock timestamp is updated
-    MEBA_EVENT_CLK_TSTAMP,
+    MEBA_EVENT_CLK_TSTAMP, // 8
 
-    // The 4 PTP pins have individual enums as the corresponding interrupt must
+    // All the PTP pins have individual enums as the corresponding interrupt must
     // be enabled separately
-    MEBA_EVENT_PTP_PIN_0,
+    MEBA_EVENT_PTP_PIN_0, // 9
     MEBA_EVENT_PTP_PIN_1,
     MEBA_EVENT_PTP_PIN_2,
     MEBA_EVENT_PTP_PIN_3,
+    MEBA_EVENT_PTP_PIN_4,
+    MEBA_EVENT_PTP_PIN_5,
 
     // TS More than one engine find match
-    MEBA_EVENT_INGR_ENGINE_ERR,
+    MEBA_EVENT_INGR_ENGINE_ERR, // 15
 
     // TS Preamble too short to append timestamp
-    MEBA_EVENT_INGR_RW_PREAM_ERR,
+    MEBA_EVENT_INGR_RW_PREAM_ERR, // 16
 
     // TS FCS error in ingress
-    MEBA_EVENT_INGR_RW_FCS_ERR,
+    MEBA_EVENT_INGR_RW_FCS_ERR, // 17
 
     // TS More than one engine find match
-    MEBA_EVENT_EGR_ENGINE_ERR,
+    MEBA_EVENT_EGR_ENGINE_ERR, // 18
 
     // TS FCS error in egress
-    MEBA_EVENT_EGR_RW_FCS_ERR,
+    MEBA_EVENT_EGR_RW_FCS_ERR, // 19
 
     // TS Timestamp captured in Tx TSFIFO
-    MEBA_EVENT_EGR_TIMESTAMP_CAPTURED,
+    MEBA_EVENT_EGR_TIMESTAMP_CAPTURED, // 20
 
     // TS Tx TSFIFO overflow
-    MEBA_EVENT_EGR_FIFO_OVERFLOW,
+    MEBA_EVENT_EGR_FIFO_OVERFLOW, // 21
 
     // General Purpose Push Button
-    MEBA_EVENT_PUSH_BUTTON,
+    MEBA_EVENT_PUSH_BUTTON, // 22
 
     // SFP Module Detect
-    MEBA_EVENT_MOD_DET,
+    MEBA_EVENT_MOD_DET, //23
 
     // KR activity
     MEBA_EVENT_KR,
@@ -520,12 +536,16 @@ typedef enum {
     VTSS_BOARD_LAN9668_8PORT_REF = 0x8290,
     VTSS_BOARD_LAN9668_ENDNODE_REF = 0x8291,
     VTSS_BOARD_LAN9668_ENDNODE_CARRIER_REF = 0x8309,
+    VTSS_BOARD_LAN9668_EDS2_REF = 0x8385,
+    VTSS_BOARD_LAN9694_PCB8398 = 0x8398, /* Laguna 24x1G + 4x10G port */
+    VTSS_BOARD_LAN9698_PCB8422 = 0x8422, /* Laguna 10 SFP */
 } vtss_board_type_t;
 
 typedef struct {
     char name[32];
     mesa_target_type_t   target;
     mesa_port_mux_mode_t mux_mode;
+    mesa_core_ref_clk_t  ref_freq;
 
     // Board type (INTERIM) - DO NOT DEPEND ON THIS
     vtss_board_type_t board_type;
@@ -541,7 +561,7 @@ typedef struct {
     // shared resources.
     mesa_port_no_t         phy_base_port;
     // Chip port number (may be different than poe channel number)
-    mesa_chip_no_t         poe_chip_port;
+    mesa_chip_no_t         poe_port;
     mesa_bool_t            poe_support;
 } meba_port_entry_t;
 

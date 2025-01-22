@@ -46,6 +46,12 @@ mesa_rc json_rpc_call(json_rpc_req_t *req, mesa_rc rc)
     return rc;
 }
 
+mesa_rc json_rpc_get_idx_vtss_debug_printf_t(json_rpc_req_t *req, struct json_object *obj, int *idx, vtss_debug_printf_t *pr)
+{
+    *pr = &printf;
+    return MESA_RC_OK;
+}
+
 static mesa_rc json_rpc_obj_type_get(json_rpc_req_t *req, struct json_object *obj, const char *name, json_type type, json_object **obj_value)
 {
     if (!json_object_object_get_ex(obj, name, obj_value)) {
@@ -57,6 +63,39 @@ static mesa_rc json_rpc_obj_type_get(json_rpc_req_t *req, struct json_object *ob
     }
     return MESA_RC_OK;
 }
+
+
+mesa_rc json_rpc_add_name_mepa_phy_cap_t(json_rpc_req_t *req, json_object *obj, const char *name, mepa_phy_cap_t *parm)
+{
+    json_object *obj_value;
+    MESA_RC(json_rpc_array_new(req, &obj_value));
+    MESA_RC(json_rpc_add_name_json_object(req, obj, "caps", obj_value));
+    if (*parm & MEPA_CAP_SPEED_MASK_1G) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_SPEED_MASK_1G");
+    }
+    if (*parm & MEPA_CAP_SPEED_MASK_2G5) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_SPEED_MASK_2G5");
+    }
+    if (*parm & MEPA_CAP_SPEED_MASK_10G) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_SPEED_MASK_10G");
+    }
+    if (*parm & MEPA_CAP_TS_MASK_GEN_1) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_TS_MASK_GEN_1");
+    }
+    if (*parm & MEPA_CAP_TS_MASK_GEN_2) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_TS_MASK_GEN_2");
+    }
+    if (*parm & MEPA_CAP_TS_MASK_GEN_3) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_TS_MASK_GEN_3");
+    }
+    if (*parm & MEPA_CAP_TS_MASK_NONE) {
+        json_rpc_add_json_string(req, obj_value, "MEPA_CAP_TS_MASK_NONE");
+    }
+    return MESA_RC_OK;
+}
+
+
+
 
 static mesa_rc json_rpc_array_type_get(json_rpc_req_t *req, json_object *obj, int *idx, json_type type, json_object **obj_value)
 {
@@ -226,7 +265,7 @@ static mesa_rc json_rpc_array_int_get(json_rpc_req_t *req, json_object *obj, int
     char        name[32];
 
     MESA_RC(json_rpc_array_type_get(req, obj, idx, json_type_int, &obj_value));
-    sprintf(name, "array index %u", *idx);
+    sprintf(name, "array index %u", (*idx) - 1);
     return json_rpc_int_range_check(req, name, obj_value, value, min, max);
 }
 
@@ -1342,6 +1381,7 @@ static const char *string_mesa_core_clock_freq_t(mesa_core_clock_freq_t *parm)
     return (
             *parm == MESA_CORE_CLOCK_DEFAULT ? "MESA_CORE_CLOCK_DEFAULT" :
             *parm == MESA_CORE_CLOCK_250MHZ ? "MESA_CORE_CLOCK_250MHZ" :
+            *parm == MESA_CORE_CLOCK_328MHZ ? "MESA_CORE_CLOCK_328MHZ" :
             *parm == MESA_CORE_CLOCK_500MHZ ? "MESA_CORE_CLOCK_500MHZ" :
             *parm == MESA_CORE_CLOCK_625MHZ ? "MESA_CORE_CLOCK_625MHZ" :
             "MESA_CORE_CLOCK_DEFAULT");
@@ -1429,6 +1469,21 @@ static mesa_rc mesa_rpc_packet_tx_frame(json_rpc_req_t *req)
 
 mesa_rc intr_ev_get(const char *name, uint32_t idx, uint32_t *cnt);
 
+/* Update the internal timestamp table, from HW */
+static void test_ts_phy_fifo_read( const mepa_port_no_t           port_no,
+                                   const mepa_timestamp_t     *const fifo_ts,
+                                   const mepa_ts_fifo_sig_t   *const sig,
+                                   const mepa_ts_fifo_status_t status)
+{
+    mepa_ts_fifo_sig_t sig_loc;
+    memset(&sig_loc, 0, sizeof(sig_loc));
+    memcpy(&sig_loc, sig, sizeof(mepa_ts_fifo_sig_t));
+    T_D("PHY Fifo read: port_no %u, msg_type:  %d, type %d, domain %d, seq %d\n", port_no,
+        sig->msg_type, sig->msg_type, sig->domain_num, sig->sequence_id);
+    T_D("PHY Fifo read: tx time:  Sec_Hi:%d, Sec_Low:%u,  Nsec: %u, Nsec (hex) ns %x\n",
+         fifo_ts->seconds.high, fifo_ts->seconds.low, fifo_ts->nanoseconds, fifo_ts->nanoseconds);
+}
+
 static mesa_rc event_get(json_rpc_req_t *req)
 {
     const char *name;
@@ -1438,6 +1493,229 @@ static mesa_rc event_get(json_rpc_req_t *req)
     MESA_RC(json_rpc_get_idx_uint32_t(req, req->params, &req->idx, &idx));
     MESA_RC(json_rpc_call(req, intr_ev_get(name, idx, &cnt)));
     MESA_RC(json_rpc_add_uint32_t(req, req->result, &cnt));
+    return MESA_RC_OK;
+}
+
+static mesa_rc mesa_rpc_meba_phy_ts_fifo_read_install(json_rpc_req_t *req)
+{
+    mepa_port_no_t port_no;
+    mepa_ts_fifo_read_t rd_cb = &test_ts_phy_fifo_read;
+
+    MESA_RC(json_rpc_get_idx_uint32_t(req, req->params, &req->idx, &port_no));
+    MESA_RC(json_rpc_call(req, meba_phy_ts_fifo_read_install(meba_global_inst, port_no, rd_cb)));
+    json_object_array_add(req->result, NULL);
+    json_object_array_add(req->result, NULL);
+
+    return MESA_RC_OK;
+}
+
+static mesa_rc mesa_rpc_meba_phy_macsec_frame_get(json_rpc_req_t *req)
+{
+    mepa_port_no_t port_no;
+    uint32_t buf_length;
+    uint32_t return_length;
+
+    MESA_RC(json_rpc_get_idx_uint32_t(req, req->params, &req->idx, &port_no));
+    MESA_RC(json_rpc_get_idx_uint32_t(req, req->params, &req->idx, &buf_length));
+    uint8_t *frame;
+    frame = (uint8_t *)malloc(sizeof(uint8_t) * buf_length);
+    MESA_RC(json_rpc_call(req, meba_phy_macsec_frame_get(meba_global_inst, port_no, buf_length, &return_length, frame)));
+    json_object_array_add(req->result, NULL);
+    json_object_array_add(req->result, NULL);
+    MESA_RC(json_rpc_add_uint32_t(req, req->result, &return_length));
+    {
+        json_object *obj;
+        MESA_RC(json_rpc_array_new(req, &obj));
+        MESA_RC(json_rpc_add_json_array(req, req->result, obj));
+        for (uint32_t i = 0; i < return_length; i++)
+            MESA_RC(json_rpc_add_uint8_t(req, obj, &frame[i]));
+    }
+    free(frame);
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_new_mepa_mac_inst_count_t(json_rpc_req_t *req, json_object **obj, mepa_mac_t *parm) /* 1280 */
+{
+    MESA_RC(json_rpc_new(req, obj)); /* 1281 */
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1215 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "addr", obj0)); /* 1216 */
+        for (int i0 = 0; i0 < 6; i0++) {
+            MESA_RC(json_rpc_add_uint8_t(req, obj0, &(parm->addr)[i0])); /* 1223 */
+        }
+    }
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_add_name_mepa_mac_inst_count_t(json_rpc_req_t *req, json_object *obj, const char *name, mepa_mac_t *parm) /* 1304 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_mac_inst_count_t(req, &obj_value, parm)); /* 1307 */
+    MESA_RC(json_rpc_add_name_json_object(req, obj, name, obj_value)); /* 1308 */
+    return MESA_RC_OK;
+}
+
+
+mesa_rc json_rpc_new_mepa_macsec_sci_inst_count_t(json_rpc_req_t *req, json_object **obj, mepa_macsec_sci_t *parm) /* 1280 */
+{
+    MESA_RC(json_rpc_new(req, obj)); /* 1281 */
+    MESA_RC(json_rpc_add_name_mepa_mac_inst_count_t(req, *obj, "mac_addr", &(parm->mac_addr))); /* 1204 */
+    MESA_RC(json_rpc_add_name_uint16_t(req, *obj, "port_id", &(parm->port_id))); /* 1204 */
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_add_name_mepa_macsec_sci_inst_count_t(json_rpc_req_t *req, json_object *obj, const char *name, mepa_macsec_sci_t *parm) /* 1304 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_macsec_sci_inst_count_t(req, &obj_value, parm)); /* 1307 */
+    MESA_RC(json_rpc_add_name_json_object(req, obj, name, obj_value)); /* 1308 */
+    return MESA_RC_OK;
+}
+
+
+// Create struct object
+mesa_rc json_rpc_new_mepa_sc_inst_count_t(json_rpc_req_t *req, json_object **obj, mepa_sc_inst_count_t *parm) /* 1282 */
+{
+    MESA_RC(json_rpc_new(req, obj)); /* 1283 */
+    MESA_RC(json_rpc_add_name_uint8_t(req, *obj, "no_sa", &(parm->no_sa))); /* 1206 */
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "sa_id", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < MEPA_MACSEC_SA_PER_SC_MAX; i0++) {
+            MESA_RC(json_rpc_add_uint8_t(req, obj0, &(parm->sa_id)[i0])); /* 1225 */
+        }
+    }
+    return MESA_RC_OK;
+}
+
+// Add struct to array
+mesa_rc json_rpc_add_mepa_sc_inst_count_t(json_rpc_req_t *req, json_object *obj, mepa_sc_inst_count_t *parm) /* 1298 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_sc_inst_count_t(req, &obj_value, parm)); /* 1301 */
+    MESA_RC(json_rpc_add_json_array(req, obj, obj_value)); /* 1302 */
+    return MESA_RC_OK;
+}
+
+
+mesa_rc json_rpc_add_name_mepa_sc_inst_count_t(json_rpc_req_t *req, json_object *obj, const char *name, mepa_sc_inst_count_t *parm) /* 1306 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_sc_inst_count_t(req, &obj_value, parm)); /* 1309 */
+    MESA_RC(json_rpc_add_name_json_object(req, obj, name, obj_value)); /* 1310 */
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_add_mepa_macsec_sci_inst_count_t(json_rpc_req_t *req, json_object *obj, mepa_macsec_sci_t *parm) /* 1296 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_macsec_sci_inst_count_t(req, &obj_value, parm)); /* 1299 */
+    MESA_RC(json_rpc_add_json_array(req, obj, obj_value)); /* 1300 */
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_new_mepa_secy_inst_count_t(json_rpc_req_t *req, json_object **obj,  mepa_port_no_t port_no, mepa_secy_inst_count_t *parm) /* 1282 */
+{
+
+    mepa_macsec_secy_cap_t cap;
+    uint16_t max_sc;
+    MESA_RC(json_rpc_call(req, meba_phy_macsec_secy_cap_get(meba_global_inst, port_no, &cap)));
+    max_sc = cap.max_peer_scs;
+
+    MESA_RC(json_rpc_new(req, obj)); /* 1283 */
+    MESA_RC(json_rpc_add_name_uint8_t(req, *obj, "no_txsc", &(parm->no_txsc))); /* 1206 */
+    MESA_RC(json_rpc_add_name_uint8_t(req, *obj, "txsc_id", &(parm->txsc_id))); /* 1206 */
+    MESA_RC(json_rpc_add_name_mepa_macsec_sci_t(req, *obj, "tx_sci", &(parm->tx_sci))); /* 1206 */
+    MESA_RC(json_rpc_add_name_mepa_sc_inst_count_t(req, *obj, "txsc_inst_count", &(parm->txsc_inst_count))); /* 1206 */
+    MESA_RC(json_rpc_add_name_uint8_t(req, *obj, "no_rxsc", &(parm->no_rxsc))); /* 1206 */
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "rxsc_id", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < max_sc; i0++) {
+            MESA_RC(json_rpc_add_uint8_t(req, obj0, &(parm->rxsc_id)[i0])); /* 1225 */
+        }
+    }
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "rx_sci", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < max_sc; i0++) {
+            MESA_RC(json_rpc_add_mepa_macsec_sci_t(req, obj0, &(parm->rx_sci)[i0])); /* 1225 */
+        }
+    }
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "rxsc_inst_count", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < max_sc; i0++) {
+            MESA_RC(json_rpc_add_mepa_sc_inst_count_t(req, obj0, &(parm->rxsc_inst_count)[i0])); /* 1225 */
+        }
+    }
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_add_mepa_secy_inst_count_t(json_rpc_req_t *req, json_object *obj, mepa_port_no_t port_no, mepa_secy_inst_count_t *parm) /* 1296 */
+{
+    json_object *obj_value;
+
+    MESA_RC(json_rpc_new_mepa_secy_inst_count_t(req, &obj_value, port_no, parm)); /* 1299 */
+    MESA_RC(json_rpc_add_json_array(req, obj, obj_value)); /* 1300 */
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_new_mepa_macsec_inst_count_t(json_rpc_req_t *req, json_object **obj, mepa_port_no_t port_no, mepa_macsec_inst_count_t *parm) /* 1282 */
+{
+    MESA_RC(json_rpc_new(req, obj)); /* 1283 */
+    mepa_macsec_secy_cap_t cap;
+    uint16_t max_secy;
+    MESA_RC(json_rpc_call(req, meba_phy_macsec_secy_cap_get(meba_global_inst, port_no, &cap)));
+    max_secy = cap.max_peer_scs;
+
+    MESA_RC(json_rpc_add_name_uint8_t(req, *obj, "no_secy", &(parm->no_secy))); /* 1206 */
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "secy_vport", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < max_secy; i0++) {
+            MESA_RC(json_rpc_add_uint8_t(req, obj0, &(parm->secy_vport)[i0])); /* 1225 */
+        }
+    }
+    {
+        json_object *obj0;
+        MESA_RC(json_rpc_array_new(req, &obj0)); /* 1217 */
+        MESA_RC(json_rpc_add_name_json_object(req, *obj, "secy_inst_count", obj0)); /* 1218 */
+        for (int i0 = 0; i0 < max_secy; i0++) {
+            MESA_RC(json_rpc_add_mepa_secy_inst_count_t(req, obj0, port_no, &(parm->secy_inst_count)[i0])); /* 1225 */
+        }
+    }
+    return MESA_RC_OK;
+}
+
+mesa_rc json_rpc_add_mepa_macsec_inst_count_t(json_rpc_req_t *req, json_object *obj, mepa_port_no_t port_no ,mepa_macsec_inst_count_t *parm) /* 1298 */
+{
+    json_object *obj_value;
+    MESA_RC(json_rpc_new_mepa_macsec_inst_count_t(req, &obj_value, port_no, parm)); /* 1301 */
+    MESA_RC(json_rpc_add_json_array(req, obj, obj_value)); /* 1302 */
+    return MESA_RC_OK;
+}
+
+static mesa_rc mesa_rpc_meba_phy_macsec_inst_count_get(json_rpc_req_t *req)
+{
+    mepa_port_no_t port_no;
+    mepa_macsec_inst_count_t count;
+    MESA_RC(json_rpc_get_idx_uint32_t(req, req->params, &req->idx, &port_no));
+
+    MESA_RC(json_rpc_call(req, meba_phy_macsec_inst_count_get(meba_global_inst, port_no, &count)));
+    json_object_array_add(req->result, NULL);
+    MESA_RC(json_rpc_add_mepa_macsec_inst_count_t(req, req->result, port_no, &count));
     return MESA_RC_OK;
 }
 
@@ -1454,6 +1732,16 @@ static json_rpc_method_t json_rpc_static_table[] = {
     { "mesa_event_get", event_get },
     { NULL, NULL}
 };
+
+static json_rpc_method_t json_rpc_phy_static_table[] = {
+    { "meba_phy_ts_fifo_read_install" , mesa_rpc_meba_phy_ts_fifo_read_install },
+    {"meba_phy_macsec_frame_get",mesa_rpc_meba_phy_macsec_frame_get},
+    { "meba_phy_macsec_inst_count_get", mesa_rpc_meba_phy_macsec_inst_count_get},
+    { NULL , NULL }
+};
+
+
+
 /* - JSON-RPC parser ----------------------------------------------- */
 
 static int find_and_call_method(const char *method_name, json_rpc_req_t *req)
@@ -1473,6 +1761,13 @@ static int find_and_call_method(const char *method_name, json_rpc_req_t *req)
             method->cb(req);
         }
     }
+    for (method = json_rpc_phy_static_table; method->cb != NULL && !found; method++) {
+        if (!strcmp(method->name, method_name)) {
+            found = 1;
+            method->cb(req);
+        }
+    }
+
 
     return (found);
 }
@@ -1509,6 +1804,13 @@ static int json_cli(int argc, const char **argv)
 
     m_str = argv[1];
     p_str = argv[2];
+
+    for(;(isspace(*p_str));p_str++);
+    if(*p_str != '[') {
+        snprintf(req.buf, 1024, "Input should be given in array");
+        req.error = 1;
+        goto OUT;
+    }
 
     req.params = json_tokener_parse(p_str);
     if (req.params == NULL) {

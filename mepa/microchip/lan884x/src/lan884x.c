@@ -146,6 +146,12 @@ static mesa_rc pfe_conf_set(mepa_device_t      *dev,
     data->conf = *config;
     MEPA_EXIT(dev);
 
+    if (config->admin.enable) {
+        pfe_direct_reg_wr(dev, INDY_BASIC_CONTROL, 0, INDY_F_BASIC_CTRL_SOFT_POW_DOWN);
+    } else {
+        pfe_direct_reg_wr(dev, INDY_BASIC_CONTROL, INDY_F_BASIC_CTRL_SOFT_POW_DOWN, INDY_F_BASIC_CTRL_SOFT_POW_DOWN);
+    }
+
     return MESA_RC_OK;
 }
 
@@ -479,8 +485,10 @@ static mepa_rc pfe_debug_info_dump(struct mepa_device *dev,
     (void)pfe_if_get(dev, 1000,  &mac_if);
 
     if (info->layer == MEPA_DEBUG_LAYER_AIL || info->layer == MEPA_DEBUG_LAYER_ALL) {
+        MEPA_ENTER(dev);
         pr("Port:%d   Family:Pfeiffer   Type:%d   Rev:%d   MacIf:%s\n",dev->numeric_handle,
            phy_info.part_number, phy_info.revision, if2txt(mac_if));
+        MEPA_EXIT(dev);
     }
 
     if (info->layer == MEPA_DEBUG_LAYER_CIL || info->layer == MEPA_DEBUG_LAYER_ALL) {

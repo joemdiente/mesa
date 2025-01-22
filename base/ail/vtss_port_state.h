@@ -12,8 +12,9 @@ typedef struct {
 } vtss_chip_counter_t;
 
 typedef struct {
-    vtss_chip_counter_t emac;
-    vtss_chip_counter_t pmac;
+    u64 value; // Accumulated value (64 bit)
+    u32 emac;  // Previous EMAC value
+    u32 pmac;  // Previous PMAC value
 } vtss_dual_counter_t;
 
 typedef struct {
@@ -313,7 +314,6 @@ typedef struct {
 typedef struct {
     union {
         vtss_port_luton26_counters_t luton26; /* and serval1 */
-        vtss_port_jr1_counters_t     jr1;
         vtss_port_jr2_counters_t     jr2;
         vtss_port_fa_counters_t      fa;
     } counter;
@@ -350,6 +350,8 @@ typedef struct {
 #if defined(VTSS_FEATURE_PORT_KR_IRQ)
 
 // Interrupt defines
+#define KR_NP_REQ          (1 << 31)
+#define KR_ACK_FINISH      (1 << 30)
 #define KR_ACTV            (1 << 29)
 #define KR_LPSVALID        (1 << 28)
 #define KR_LPCVALID        (1 << 27)
@@ -446,142 +448,23 @@ typedef struct {
 
 #define VTSS_SD6G_40_CNT 3
 
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_SD28_CNT 33
 #endif
 
 typedef struct {
-    /* CIL function pointers */
-    vtss_rc (* miim_read)(struct vtss_state_s *vtss_state,
-                          vtss_miim_controller_t miim_controller,
-                          u8 miim_addr,
-                          u8 addr,
-                          u16 *value,
-                          BOOL report_errors);
-    vtss_rc (* miim_write)(struct vtss_state_s *vtss_state,
-                           vtss_miim_controller_t miim_controller,
-                           u8 miim_addr,
-                           u8 addr,
-                           u16 value,
-                           BOOL report_errors);
-    vtss_rc (* mmd_read)(struct vtss_state_s *vtss_state,
-                         vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                         u16 addr, u16 *value, BOOL report_errors);
-    vtss_rc (* mmd_read_inc)(struct vtss_state_s *vtss_state,
-                             vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                             u16 addr, u16 *buf, u8 count, BOOL report_errors);
-    vtss_rc (* mmd_write)(struct vtss_state_s *vtss_state,
-                          vtss_miim_controller_t miim_controller, u8 miim_addr, u8 mmd,
-                          u16 addr, u16 data, BOOL report_errors);
-    vtss_rc (* map_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* conf_get)(struct vtss_state_s *vtss_state,
-                         const vtss_port_no_t port_no,
-                         vtss_port_conf_t *const conf);
-    vtss_rc (* conf_set)(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
-
-    vtss_rc (* ifh_set)(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
-    vtss_rc (* clause_37_status_get)(struct vtss_state_s *vtss_state,
-                                     const vtss_port_no_t port_no,
-                                     vtss_port_clause_37_status_t *const status);
-    vtss_rc (* clause_37_control_get)(struct vtss_state_s *vtss_state,
-                                      const vtss_port_no_t           port_no,
-                                      vtss_port_clause_37_control_t  *const control);
-    vtss_rc (* clause_37_control_set)(struct vtss_state_s *vtss_state,
-                                      const vtss_port_no_t port_no);
-
-#if defined(VTSS_FEATURE_PORT_KR) || defined(VTSS_FEATURE_PORT_KR_IRQ)
-    vtss_rc (* kr_conf_set)(struct vtss_state_s *vtss_state,
-                            const vtss_port_no_t port_no);
-
-    vtss_rc (* kr_status)(struct vtss_state_s *vtss_state,
-                          const vtss_port_no_t port_no,
-                          vtss_port_kr_status_t *const status);
-
-    vtss_rc (* kr_fec_set)(struct vtss_state_s *vtss_state,
-                           const vtss_port_no_t port_no);
-#endif /* VTSS_FEATURE_PORT_KR) || VTSS_FEATURE_PORT_KR_IRQ */
-
-#if defined(VTSS_FEATURE_PORT_KR_IRQ)
-    vtss_rc (* kr_irq_get)(vtss_inst_t inst,
-                           const vtss_port_no_t port_no,
-                           u32 *const vector);
-
-    vtss_rc (* kr_irq_activity)(vtss_inst_t inst,
-                                u32 *const irq_mask);
-
-    vtss_rc (* kr_event_enable)(vtss_inst_t inst,
-                                const vtss_port_no_t port_no,
-                                BOOL enable);
-
-    vtss_rc (* kr_irq_mask_set)(vtss_inst_t inst,
-                                const vtss_port_no_t port_no,
-                                const u32 mask);
-
-    vtss_rc (* kr_fw_msg)(struct vtss_state_s *vtss_state,
-                          const vtss_port_no_t port_no);
-
-    vtss_rc (* kr_fw_req)(struct vtss_state_s *vtss_state,
-                          const vtss_port_no_t port_no,
-                          vtss_port_kr_fw_req_t *const fw_req);
-
-    vtss_rc (* kr_frame_set)(struct vtss_state_s *vtss_state,
-                             const vtss_port_no_t port_no,
-                             const vtss_port_kr_frame_t *const frm);
-
-    vtss_rc (* kr_frame_get)(struct vtss_state_s *vtss_state,
-                             const vtss_port_no_t port_no,
-                             vtss_port_kr_frame_t *const frm);
-
-
-    vtss_rc (* kr_coef_set)(struct vtss_state_s *vtss_state,
-                            const vtss_port_no_t port_no,
-                            const u16 coef_in,
-                            vtss_kr_status_results_t *const sts);
-
-    vtss_rc (* kr_eye_dim)(struct vtss_state_s *vtss_state,
-                           const vtss_port_no_t port_no,
-                           vtss_port_kr_eye_dim_t *const eye);
-
-    vtss_rc (* kr_ber_cnt)(struct vtss_state_s *vtss_state,
-                          const vtss_port_no_t port_no,
-                          u16 *const ber);
-
-#endif /* VTSS_FEATURE_PORT_KR_IRQ */
-    vtss_rc (* kr_ctle_adjust)(struct vtss_state_s *vtss_state,
-                               const vtss_port_no_t port_no);
-
-    vtss_rc (* kr_ctle_get)(struct vtss_state_s *vtss_state,
-                            const vtss_port_no_t port_no, vtss_port_ctle_t *const ctle);
-
-    vtss_rc (* test_conf_set)(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
-
-    vtss_rc (* serdes_debug_set)(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
-                                 const vtss_port_serdes_debug_t *const conf);
-
-    vtss_rc (* status_get)(struct vtss_state_s *vtss_state,
-                           const vtss_port_no_t  port_no,
-                           vtss_port_status_t    *const status);
-    vtss_rc (* counters_update)(struct vtss_state_s *vtss_state,
-                                const vtss_port_no_t port_no);
-    vtss_rc (* counters_clear)(struct vtss_state_s *vtss_state,
-                               const vtss_port_no_t port_no);
-    vtss_rc (* counters_get)(struct vtss_state_s *vtss_state,
-                             const vtss_port_no_t port_no,
-                             vtss_port_counters_t *const counters);
-    vtss_rc (* basic_counters_get)(struct vtss_state_s *vtss_state,
-                                   const vtss_port_no_t port_no,
-                                   vtss_basic_counters_t *const counters);
-    vtss_rc (* forward_set)(struct vtss_state_s *vtss_state,
-                                 const vtss_port_no_t port_no);
-
     /* Configuration/state */
     vtss_port_map_t               map[VTSS_PORT_ARRAY_SIZE];
     vtss_port_conf_t              conf[VTSS_PORT_ARRAY_SIZE];
     BOOL                          conf_set_called[VTSS_PORT_ARRAY_SIZE];
     vtss_serdes_mode_t            sd6g40_mode[VTSS_SD6G_40_CNT];
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_serdes_mode_t            sd28_mode[VTSS_SD28_CNT];
     u32                           cmu_enable_mask;
+    BOOL                          link[VTSS_PORT_ARRAY_SIZE];
+    BOOL                          ctle_done[VTSS_PORT_ARRAY_SIZE];
+    vtss_port_bulk_t              bulk_state;
+    u64                           bulk_port_mask;
 #endif
     vtss_serdes_mode_t            serdes_mode[VTSS_PORT_ARRAY_SIZE];
     vtss_port_clause_37_control_t clause_37[VTSS_PORT_ARRAY_SIZE];
@@ -589,8 +472,7 @@ typedef struct {
     vtss_port_speed_t             current_speed[VTSS_PORT_ARRAY_SIZE];
     vtss_port_interface_t         current_if_type[VTSS_PORT_ARRAY_SIZE];
     vtss_sd10g_media_type_t       current_mt[VTSS_PORT_ARRAY_SIZE];
-    BOOL                          link[VTSS_PORT_ARRAY_SIZE];
-    BOOL                          ctle_done[VTSS_PORT_ARRAY_SIZE];
+    BOOL                          current_pd[VTSS_PORT_ARRAY_SIZE];
 #if defined(VTSS_FEATURE_PORT_KR) || defined(VTSS_FEATURE_PORT_KR_IRQ)
     vtss_port_kr_conf_t           kr_conf[VTSS_PORT_ARRAY_SIZE];
     vtss_port_kr_fec_t            kr_fec[VTSS_PORT_ARRAY_SIZE];
@@ -618,6 +500,83 @@ typedef struct {
     vtss_calendar_t               calendar;
 #endif /* defined(VTSS_CALENDAR_CALC) */
 } vtss_port_state_t;
+
+vtss_rc vtss_cil_port_conf_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_conf_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                               vtss_port_conf_t *const conf);
+vtss_rc vtss_cil_miim_read(struct vtss_state_s *vtss_state, vtss_miim_controller_t miim_controller,
+                           u8 miim_addr, u8 addr, u16 *value, BOOL report_errors);
+vtss_rc vtss_cil_miim_write(struct vtss_state_s *vtss_state, vtss_miim_controller_t miim_controller,
+                            u8 miim_addr, u8 addr, u16 value, BOOL report_errors);
+vtss_rc vtss_cil_mmd_read(struct vtss_state_s *vtss_state, vtss_miim_controller_t miim_controller,
+                          u8 miim_addr, u8 mmd, u16 addr, u16 *value, BOOL report_errors);
+vtss_rc vtss_cil_mmd_read_inc(struct vtss_state_s *vtss_state, vtss_miim_controller_t miim_controller,
+                              u8 miim_addr, u8 mmd, u16 addr, u16 *buf, u8 count, BOOL report_errors);
+vtss_rc vtss_cil_mmd_write(struct vtss_state_s *vtss_state, vtss_miim_controller_t miim_controller,
+                           u8 miim_addr, u8 mmd, u16 addr, u16 data,  BOOL report_errors);
+vtss_rc vtss_cil_port_clause_37_control_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                            vtss_port_clause_37_control_t *const control);
+vtss_rc vtss_cil_port_clause_37_control_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_clause_37_status_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                           vtss_port_clause_37_status_t *const status);
+vtss_rc vtss_cil_port_status_get(struct vtss_state_s *vtss_state, const vtss_port_no_t  port_no,
+                                 vtss_port_status_t    *const status);
+vtss_rc vtss_cil_port_kr_ctle_adjust(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_kr_ctle_get(struct vtss_state_s *vtss_state,
+                                  const vtss_port_no_t port_no, vtss_port_ctle_t *const ctle);
+vtss_rc vtss_cil_port_counters_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                   vtss_port_counters_t *const counters);
+vtss_rc vtss_cil_port_counters_update(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_counters_clear(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_basic_counters_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                         vtss_basic_counters_t *const counters);
+vtss_rc vtss_cil_port_forward_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_test_conf_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_serdes_debug(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                   const vtss_port_serdes_debug_t *const conf);
+vtss_rc vtss_cil_port_conf_set_bulk(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_port_ifh_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+#if defined(VTSS_FEATURE_SYNCE)
+vtss_rc vtss_cil_synce_clock_out_set(struct vtss_state_s *vtss_state,
+                                     const vtss_synce_clk_port_t clk_port);
+vtss_rc vtss_cil_synce_clock_in_set(struct vtss_state_s *vtss_state,
+                                    const vtss_synce_clk_port_t clk_port);
+vtss_rc vtss_cil_synce_station_clk_out_set(struct vtss_state_s *vtss_state,
+                                           const vtss_synce_clk_port_t clk_port_par);
+#endif
+#if defined(VTSS_FEATURE_PORT_KR_IRQ) || defined(VTSS_FEATURE_PORT_KR)
+vtss_rc vtss_cil_port_kr_status(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                vtss_port_kr_status_t *const status);
+vtss_rc vtss_cil_port_kr_fec_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+vtss_rc vtss_cil_port_kr_conf_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no);
+#endif
+#if defined(VTSS_FEATURE_PORT_KR_IRQ)
+vtss_rc vtss_cil_port_kr_coef_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                  const u16 coef_in, vtss_kr_status_results_t *const sts_out);
+vtss_rc vtss_cil_port_kr_frame_set(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                   const vtss_port_kr_frame_t *const frm);
+vtss_rc vtss_cil_port_kr_frame_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                   vtss_port_kr_frame_t *const frm);
+vtss_rc vtss_cil_port_kr_eye_dim(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                 vtss_port_kr_eye_dim_t *const eye);
+vtss_rc vtss_cil_port_kr_ber_cnt(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                 u16 *const ber);
+vtss_rc vtss_cil_port_kr_irq_get(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                 u32 *const irq);
+vtss_rc vtss_cil_port_kr_irq_activity(struct vtss_state_s *vtss_state, u32 *const irq_mask);
+vtss_rc vtss_cil_port_kr_event_enable(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                      BOOL enable);
+vtss_rc vtss_cil_port_kr_fw_req(struct vtss_state_s *vtss_state, const vtss_port_no_t port_no,
+                                vtss_port_kr_fw_req_t *const fw_req);
+#endif
+
+vtss_rc vtss_cil_debug_info_print(struct vtss_state_s *vtss_state,
+                                  const vtss_debug_printf_t pr,
+                                  const vtss_debug_info_t   *const info);
+vtss_rc vtss_cil_port_map_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_restart_conf_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_init_conf_set(struct vtss_state_s *vtss_state);
+
 
 vtss_rc vtss_port_inst_create(struct vtss_state_s *vtss_state);
 vtss_rc vtss_port_restart_sync(struct vtss_state_s *vtss_state);

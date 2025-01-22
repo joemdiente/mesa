@@ -5,10 +5,10 @@
 // Avoid "vtss_api.h not used in module vtss_macsec_api.c"
 /*lint --e{766} */
 #include "vtss_phy_api.h"
-
+#include "../phy_10g/chips/venice/vtss_venice_regs_fc_buffer.h"
 #if defined(VTSS_FEATURE_MACSEC)
 
-#define VTSS_TRACE_GROUP VTSS_TRACE_GROUP_MACSEC // Must come before #include "vtss_state.h"
+#define VTSS_TRACE_GROUP VTSS_PHY_TRACE_GROUP_MACSEC // Must come before #include "vtss_state.h"
 #include "../common/vtss_phy_common.h"
 #if defined (VTSS_OPT_PHY_TIMESTAMP)
 #include "../ts/vtss_phy_ts.h"
@@ -201,6 +201,7 @@ vtss_rc vtss_macsec_store_sa(vtss_state_t *vtss_state,
 #ifdef VTSS_MACSEC_FIFO_OVERFLOW_WORKAROUND
 vtss_rc vtss_macsec_reconfigure(vtss_state_t *vtss_state, const vtss_port_no_t port_no);
 #endif
+vtss_rc vtss_phy_macsec_bypass_set(vtss_state_t *vtss_state, const vtss_port_no_t port_no, BOOL macsec_bypass);
 
 static vtss_rc vtss_macsec_init_set_priv(vtss_state_t *vtss_state, const vtss_port_no_t port_no,
                                          const vtss_macsec_init_t *const init);
@@ -327,13 +328,13 @@ static u32 get_new_context_id(vtss_state_t *vtss_state, vtss_port_no_t port_no, 
 {
     u32 ctxt_id = 0;
     u64 ingr_flow_map = vtss_state->macsec_conf[port_no].glb.ingr_flow_map;
-
+    u8 max_sa = vtss_state->macsec_capability[port_no].max_sa_cnt;
     /* For egress, Set Context-id to record always. For ingress, Set the context id values
        from sets {0-63} or {64-127}. Alternate context id values between record and (record + 64). */
     if (egr) {
         ctxt_id = record;
     } else {
-        ctxt_id = (ingr_flow_map & (1 << record)) > 0 ? (record + VTSS_MACSEC_10G_MAX_SA) : record;
+        ctxt_id = (ingr_flow_map & (1 << record)) > 0 ? (record + max_sa) : record;
         ingr_flow_map = ingr_flow_map ^ (1 << record);
     }
     vtss_state->macsec_conf[port_no].glb.ingr_flow_map = ingr_flow_map;
@@ -628,7 +629,6 @@ static vtss_rc dbg_counter_incr(vtss_state_t *vtss_state, const vtss_port_no_t p
     return rc;
 }
 
-
 // Function for getting the RC error counters for a specific port
 // IN  : vtss_state - Internal API state containing the error counters
 // IN  : port_no    - The port in question for clearing the counters
@@ -689,10 +689,16 @@ static vtss_rc vtss_macsec_verify_port(const vtss_inst_t                inst,
 static vtss_rc is_sci_valid(vtss_state_t *vtss_state, vtss_port_no_t port_no, const vtss_macsec_sci_t *sci)
 {
     vtss_mac_t boardcast = {.addr = MAC_ADDR_BROADCAST};
+    vtss_mac_t zeromac = {.addr = MAC_ADDR_ZERO};
 
     // IEEE 802.1AE-2006, section 9.9 - The 64-bit value FF-FF-FF-FF-FF-FF is never used as an SCI and is reserved for use by implementations to indicate the absence of an SC or an SCI in contexts where an SC can be present */
     if (memcmp(&sci->mac_addr, &boardcast, sizeof(boardcast)) == 0) {
         VTSS_I("Broadcast MAC address should not be used");
+        return dbg_counter_incr(vtss_state, port_no, VTSS_RC_ERR_MACSEC_INVALID_SCI_MACADDR);
+    }
+    // The MACaddress of the Port can't be zero
+    if (memcmp(&sci->mac_addr, &zeromac, sizeof(zeromac)) == 0) {
+        VTSS_I("MACaddress of the Port can't be zero");
         return dbg_counter_incr(vtss_state, port_no, VTSS_RC_ERR_MACSEC_INVALID_SCI_MACADDR);
     }
 
@@ -782,16 +788,10 @@ static BOOL macsec_secy_in_use_inter_getnext(vtss_state_t        *vtss_state,
                                              const vtss_port_no_t      port_no,
                                              macsec_secy_in_use_iter_t *in_use_inter)
 {
-    u32 i, max_secy = VTSS_MACSEC_1G_MAX_SECY;
+    u32 i, max_secy;
     vtss_macsec_internal_secy_t *secy;
 
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-#if defined(VTSS_CHIP_10G_PHY)
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-#endif
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     for (i = in_use_inter->next_index; i < max_secy; i++) {
         in_use_inter->next_index++;
@@ -809,12 +809,7 @@ static BOOL macsec_secy_in_use_inter_getnext(vtss_state_t        *vtss_state,
 static vtss_rc sc_from_sci_get(vtss_state_t *vtss_state, vtss_port_no_t port_no, vtss_macsec_internal_secy_t *secy, const vtss_macsec_sci_t *sci, u32 *sc)
 {
     u32 i, max_sc_rx;
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     for (i = 0; i < max_sc_rx; i++) {
         if (secy->rx_sc[i] == NULL) {
@@ -842,9 +837,9 @@ static BOOL check_resources(vtss_state_t *vtss_state,
     vtss_macsec_internal_secy_t *secy;
     u32 num_of_sa_rsrv = 0, num_of_rx_sa_inuse = 0, i, sc, sa;
     BOOL found_sc = 0, found_sa = 0, secy_in_use = 0;
-    u32 macsec_max_port_sa = phy_is_1g(vtss_state, port_no) ? VTSS_MACSEC_1G_MAX_SA : VTSS_MACSEC_10G_MAX_SA;
-    u32 macsec_max_sc_rx = macsec_max_port_sa / 2;
-    u32 macsec_max_secy = macsec_max_sc_rx;
+    u32 macsec_max_port_sa = vtss_state->macsec_capability[port_no].max_sa_cnt;
+    u32 macsec_max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
+    u32 macsec_max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     num_of_sa_rsrv += VTSS_MACSEC_SA_PER_SC_MIN;
 
@@ -896,7 +891,7 @@ static BOOL check_resources(vtss_state_t *vtss_state,
 static vtss_rc is_ssci_valid(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL egr,
                              const vtss_macsec_sci_t *sci, const vtss_macsec_ssci_t *ssci, const vtss_macsec_sak_t *sak)
 {
-    u32 an, sc, max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
+    u32 an, sc, max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
     vtss_macsec_internal_secy_t *secy;
     macsec_secy_in_use_iter_t in_use_inter;
 
@@ -908,11 +903,7 @@ static vtss_rc is_ssci_valid(vtss_state_t *vtss_state, vtss_port_no_t port_no, B
         VTSS_E("Invalid SCI");
         return VTSS_RC_ERROR;
     }
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     /* Loop through all the SA's to check for same SAK and SCI */
     macsec_secy_in_use_inter_init(&in_use_inter);
@@ -965,12 +956,7 @@ static vtss_rc macsec_update_glb_validate(vtss_state_t *vtss_state, vtss_port_no
     vtss_macsec_internal_secy_t *secy;
 
     macsec_secy_in_use_inter_init(&in_use_inter);
-
-    if (phy_is_1g(vtss_state, p)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[p].max_sc_cnt;
 
     while (macsec_secy_in_use_inter_getnext(vtss_state, p, &in_use_inter)) {
         secy = &vtss_state->macsec_conf[p].secy[in_use_inter.secy_id];
@@ -1037,16 +1023,9 @@ static vtss_rc vtss_macsec_port_check (vtss_inst_t inst, vtss_state_t **vtss_sta
         VTSS_E("MacSec API port:%u not enabled", port.port_no);
         return dbg_counter_incr(*vtss_state, port.port_no, VTSS_RC_ERR_MACSEC_NOT_ENABLED);
     }
-
-    if (phy_is_1g(*vtss_state, port.port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-    }
-
+    max_secy = (*vtss_state)->macsec_capability[port.port_no].max_secy_cnt;
     for (i = 0; i < max_secy; i++) {
         secy = &(*vtss_state)->macsec_conf[port.port_no].secy[i];
-
         if ((create && secy->in_use) && (secy->sci.port_id == port.port_id) && (secy->service_id == port.service_id)) {
             VTSS_E("SecY already in use. (port_no:%u port_id:%u service_id:%u)", port.port_no, port.port_id, port.service_id);
             return dbg_counter_incr(*vtss_state, port.port_no, VTSS_RC_ERR_MACSEC_SECY_ALREADY_IN_USE);
@@ -1517,7 +1496,9 @@ static vtss_rc vtss_mac_block_mtu_set_priv(vtss_state_t *vtss_state,
     u32 mac_maxlen_cfg = 0;
 
     VTSS_D("Port:%d, MTU:%d, Tag_check:%d", port_no, mtu_value, mtu_tag_check);
-
+    if (mtu_value < 64) {
+        return VTSS_RC_ERR_PARM;
+    }
     vtss_state->macsec_conf[port_no].glb.mac_block_mtu = mtu_value;
 
     if (mtu_tag_check) {
@@ -1589,8 +1570,10 @@ static vtss_rc vtss_macsec_init_set_priv(vtss_state_t                      *vtss
     u32               latency, i, record = 0;
     vtss_macsec_default_action_policy_t policy = {0, 0, 0, 0, 0, 0};
     vtss_macsec_mac_counters_t mac_cntrs;
+    vtss_macsec_internal_rx_sc_t **temp_rx_sc;
     BOOL dis_nm = init->dis_ing_nm_macsec_en;
     u8   xform_rec_size;
+    u8 max_secy_cnt = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     /* While configuring macsec, enable macsec block first and then enable
        Mac blocks. While removing macsec configuration, disable Mac block
@@ -1721,7 +1704,7 @@ static vtss_rc vtss_macsec_init_set_priv(vtss_state_t                      *vtss
                     VTSS_F_MACSEC_INGR_IG_CC_PARAMS2_IG_CP_TAG_PARSE_STAG |
                     VTSS_F_MACSEC_INGR_IG_CC_PARAMS2_IG_CP_TAG_PARSE_QINQ);
 
-        /* Enable octet incrment mode to increment validated/decrypted counter even when validate frames is disabled */
+        /* Enable octet increment mode to increment validated/decrypted counter even when validate frames is disabled */
         if (vtss_state->macsec_conf[port_no].glb.macsec_revb == TRUE) {
             CSR_WARM_WR(port_no, VTSS_MACSEC_EGR_POST_PROC_CTL_DEBUG_REGS_PP_CTRL,
                         VTSS_F_MACSEC_EGR_POST_PROC_CTL_DEBUG_REGS_PP_CTRL_MACSEC_OCTET_INCR_MODE);
@@ -1826,9 +1809,35 @@ static vtss_rc vtss_macsec_init_set_priv(vtss_state_t                      *vtss
                     VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_SW_RST |
                     VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_BYPASS_ENA);
 
-        /* Clear the internals */
-        memset(&vtss_state->macsec_conf[port_no], 0, sizeof(vtss_state->macsec_conf[port_no]));
+        //DTS 416131 FC Buffer TX_ENA is toggled when macsec is disabled - Vitesse approved workaround
+        /* Disable FC Buffer TX_ENA */
 
+        CSR_WARM_WRM(port_no, VTSS_FC_BUFFER_CONFIG_FC_ENA_CFG,
+           0,
+           VTSS_F_FC_BUFFER_CONFIG_FC_ENA_CFG_TX_ENA);
+
+       /* Enable FC Buffer TX_ENA */
+        CSR_WARM_WRM(port_no, VTSS_FC_BUFFER_CONFIG_FC_ENA_CFG,
+           VTSS_F_FC_BUFFER_CONFIG_FC_ENA_CFG_TX_ENA,
+           VTSS_F_FC_BUFFER_CONFIG_FC_ENA_CFG_TX_ENA);
+
+        /* Clear the internals */
+        /** The structure "macsec_conf" has pointer members so we cannot directly
+            memset "macsec_conf" to 0 then the memory for pointers will be free so we need to
+            memset contents in the pointer only
+            macsec_conf[p]->secy has member rx_sc which should not be set to NULL so storing the memory in temp variable
+            and assigning it back after memset secy contents to 0**/
+        for(u8 i = 0; i < max_secy_cnt; i++) {
+            temp_rx_sc = vtss_state->macsec_conf[port_no].secy[i].rx_sc;
+            memset(&(vtss_state->macsec_conf[port_no].secy[i].rx_sc) , 0, sizeof(vtss_state->macsec_conf[port_no].secy[i].rx_sc));
+            memset(&(vtss_state->macsec_conf[port_no].secy[i]) , 0, sizeof(vtss_state->macsec_conf[port_no].secy[i]));
+            vtss_state->macsec_conf[port_no].secy[i].rx_sc = temp_rx_sc;
+        }
+        memset(&(*vtss_state->macsec_conf[port_no].rx_sc) , 0, sizeof(*vtss_state->macsec_conf[port_no].rx_sc));
+        memset(&(*vtss_state->macsec_conf[port_no].rx_sa) , 0, sizeof(*vtss_state->macsec_conf[port_no].rx_sa));
+        memset(&(*vtss_state->macsec_conf[port_no].tx_sa) , 0, sizeof(*vtss_state->macsec_conf[port_no].tx_sa));
+        memset(&vtss_state->macsec_conf[port_no].glb , 0, sizeof(vtss_state->macsec_conf[port_no].glb));
+        memset(&vtss_state->macsec_conf[port_no].rc_dbg_counters , 0, sizeof(vtss_state->macsec_conf[port_no].rc_dbg_counters));
     }
 
     return VTSS_RC_OK;
@@ -2211,11 +2220,7 @@ static vtss_rc macsec_sa_match_warm_start_get(vtss_state_t *vtss_state, vtss_por
 
     u32 sa, max_sa, value;
     u16 mac_addr;
-    if (phy_is_1g(vtss_state, p)) {
-        max_sa = VTSS_MACSEC_1G_MAX_SA;
-    } else {
-        max_sa = VTSS_MACSEC_10G_MAX_SA;
-    }
+    max_sa = vtss_state->macsec_capability[p].max_sa_cnt;
 
     for (sa = 0; sa < max_sa; sa++) {
         VTSS_D("SA:%u  Dir:%s  Match idx:0x%x", sa, egr ? "Egress" : "Ingress", pattern->match);
@@ -2413,11 +2418,7 @@ static vtss_rc record_empty_get(vtss_state_t *vtss_state,
                                 vtss_port_no_t port_no, u32 *id, BOOL tx)
 {
     u32 sa, max_sa;
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_sa = VTSS_MACSEC_1G_MAX_SA;
-    } else {
-        max_sa = VTSS_MACSEC_10G_MAX_SA;
-    }
+    max_sa = vtss_state->macsec_capability[port_no].max_sa_cnt;
     if (tx) {
         for (sa = 0; sa < max_sa; sa++) {
             if (!vtss_state->macsec_conf[port_no].tx_sa[sa].in_use) {
@@ -2630,14 +2631,14 @@ static u32 get_xform_value_64(vtss_state_t *vtss_state, vtss_port_no_t p, u32 i,
                 return get_u32(&sak->h_buf[0] + ((i - 6) * 4)); // AES Hash 0-3 Record 6-9
             } else if (i == 10) {
                 if (egr) {
-                    return (u32)secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn;// Sequence / Next PN, LSW, Record 10
+                    return (u32)secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn - 1;// Sequence / Next PN, LSW, Record 10
                 } else {
                     temp2 = secy->rx_sc[sc]->sa[an]->status.pn_status.lowest_pn.xpn + secy->rx_sc[sc]->conf.replay_window;
                     return (u32)temp2; // Next PN, LSW, Record 10
                 }
             } else if (i == 11) {
                 if (egr) {
-                    return (u32)(secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn >> 32);// Sequence / Next PN, MSW, Record 11
+                    return (u32)((secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn - 1) >> 32);// Sequence / Next PN, MSW, Record 11
                 } else {
                     temp2 = secy->rx_sc[sc]->sa[an]->status.pn_status.lowest_pn.xpn + secy->rx_sc[sc]->conf.replay_window;
                     return (u32)(temp2 >> 32); //Next PN, MSW, Record 11
@@ -2679,14 +2680,14 @@ static u32 get_xform_value_64(vtss_state_t *vtss_state, vtss_port_no_t p, u32 i,
                 return get_u32(&sak->h_buf[0] + ((i - 10) * 4)); // AES Hash 0-3 Record 10-13
             } else if (i == 14) {
                 if (egr) {
-                    return (u32)secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn;// Sequence / Next PN, LSW, Record 14
+                    return (u32)secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn - 1;// Sequence / Next PN, LSW, Record 14
                 } else {
                     temp2 = secy->rx_sc[sc]->sa[an]->status.pn_status.lowest_pn.xpn + secy->rx_sc[sc]->conf.replay_window;
                     return (u32)temp2; // Sequence / Next PN, LSW, Record 14
                 }
             } else if (i == 15) {
                 if (egr) {
-                    return (u32)(secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn >> 32); // Sequence / Next PN, MSW, Record 15
+                    return (u32)((secy->tx_sc.sa[an]->status.pn_status.next_pn.xpn - 1) >> 32); // Sequence / Next PN, MSW, Record 15
                 } else {
                     temp2 = secy->rx_sc[sc]->sa[an]->status.pn_status.lowest_pn.xpn + secy->rx_sc[sc]->conf.replay_window;
                     return (u32)(temp2 >> 32); //Sequence, MSW, Record 15
@@ -2827,12 +2828,7 @@ static vtss_rc record_inuse_get(vtss_state_t *vtss_state, vtss_port_no_t p, BOOL
         (secy->conf.current_cipher_suite == VTSS_MACSEC_CIPHER_SUITE_GCM_AES_XPN_128)) {
         aes_128 = TRUE;
     }
-
-    if (phy_is_1g(vtss_state, p)) {
-        max_sa = VTSS_MACSEC_1G_MAX_SA;
-    } else {
-        max_sa = VTSS_MACSEC_10G_MAX_SA;
-    }
+    max_sa = vtss_state->macsec_capability[p].max_sa_cnt;
 
     for (sa = 0; sa < max_sa; sa++) {
         if (egr) {
@@ -2991,7 +2987,7 @@ static vtss_rc macsec_sa_enable(vtss_state_t *vtss_state, vtss_port_no_t p, u32 
 
 static vtss_rc macsec_sa_inuse(vtss_state_t *vtss_state, vtss_port_no_t p, u32 record, BOOL egr, BOOL enable)
 {
-    VTSS_D("Set sa_inuse bit: sa:%d dir:%s enable:%d", record, egr ? "egr" : "ingr", enable );
+    VTSS_D("Set sa_inuse bit: sa:%d dir:%s enable:%d", record, egr ? "egr" : "ingr", enable);
     if (egr) {
         CSR_WARM_WRM(p, VTSS_MACSEC_EGR_SA_MATCH_FLOW_CONTROL_PARAMS_EGR_SAM_FLOW_CTRL_EGR(record),
                      (enable ? VTSS_F_MACSEC_EGR_SA_MATCH_FLOW_CONTROL_PARAMS_EGR_SAM_FLOW_CTRL_EGR_SA_IN_USE : 0),
@@ -3203,7 +3199,6 @@ static vtss_rc vtss_macsec_rx_sa_disable_priv(vtss_state_t              *vtss_st
 {
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
     u32 sc;
-    mepa_timeofday_t tod;
     VTSS_MACSEC_ASSERT(an >= VTSS_MACSEC_SA_PER_SC_MAX, "AN is invalid");
 
     VTSS_RC(sc_from_sci_get(vtss_state, port.port_no, secy, sci, &sc));
@@ -3223,8 +3218,7 @@ static vtss_rc vtss_macsec_rx_sa_disable_priv(vtss_state_t              *vtss_st
     secy->rx_sc[sc]->sa[an]->status.in_use = 0;
     secy->rx_sc[sc]->sa[an]->enabled = 0;
 
-    MEPA_TIME_OF_DAY(tod);
-    secy->rx_sc[sc]->sa[an]->status.stopped_time = tod.sec; // TimeOfDay in seconds
+    secy->rx_sc[sc]->sa[an]->status.stopped_time = MEPA_UPTIME_SECONDS();
     return VTSS_RC_OK;
 }
 
@@ -3234,7 +3228,6 @@ static vtss_rc vtss_macsec_tx_sa_disable_priv(vtss_state_t              *vtss_st
                                               const u16                 an)
 {
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
-    mepa_timeofday_t tod;
 
     VTSS_MACSEC_ASSERT(an >= VTSS_MACSEC_SA_PER_SC_MAX, "AN is invalid");
 
@@ -3260,11 +3253,10 @@ static vtss_rc vtss_macsec_tx_sa_disable_priv(vtss_state_t              *vtss_st
         secy->tx_sc.status.encoding_sa = 0;
         secy->tx_sc.status.enciphering_sa = 0;
     }
-    MEPA_TIME_OF_DAY(tod);
-    secy->tx_sc.sa[an]->status.stopped_time = tod.sec; // TimeOfDay in seconds
+
+    secy->tx_sc.sa[an]->status.stopped_time = MEPA_UPTIME_SECONDS();
     return VTSS_RC_OK;
 }
-
 
 static vtss_rc vtss_macsec_control_frame_match_conf_set_priv(vtss_state_t                                 *vtss_state,
                                                              const vtss_port_no_t                         port_no,
@@ -3813,12 +3805,7 @@ static vtss_rc vtss_macsec_secy_counters_get_priv(vtss_state_t                  
     secy->secy_cnt.out_octets_protected = secy->tx_sc.cnt.out_octets_protected;
 
     VTSS_N("ev_bit:%d", ev_bit);
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     // RX an
     /* Octets validated are now maintained in respective SC, hence clearing before updation */
@@ -4348,18 +4335,12 @@ static vtss_rc vtss_macsec_secy_conf_del_priv(vtss_state_t *vtss_state,
                                               const vtss_macsec_port_t port, const u32 secy_id)
 {
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
+    vtss_macsec_internal_rx_sc_t **temp_rx_sc;
     u16 sc, max_sc_rx;
-
     if (secy->tx_sc.in_use) {
         VTSS_RC(vtss_macsec_tx_sc_del_priv(vtss_state, port, secy_id));
     }
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
-
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
     for (sc = 0; sc < max_sc_rx; sc++) {
         if (secy->rx_sc[sc] == NULL) {
             continue;
@@ -4386,11 +4367,11 @@ static vtss_rc vtss_macsec_secy_conf_del_priv(vtss_state_t *vtss_state,
     if (secy->pattern_record[VTSS_MACSEC_MATCH_ACTION_DROP][VTSS_MACSEC_DIRECTION_EGRESS] != MACSEC_NOT_IN_USE) {
         VTSS_RC(vtss_macsec_pattern_del_priv(vtss_state, port, secy_id, VTSS_MACSEC_DIRECTION_EGRESS, VTSS_MACSEC_MATCH_ACTION_DROP));
     }
-
-    memset(secy, 0, sizeof(*secy));
-    for (sc = 0; sc < max_sc_rx; sc++) {
-        secy->rx_sc[sc] = NULL;
-    }
+    /* Storing the address of the secy->rx_sc in temp variable and assigning back to
+       secy->rx_sc after memsetting contents of secy to 0 so that secy->rx_sc will point to memory */
+    temp_rx_sc = secy->rx_sc;
+    memset(&(*secy), 0, sizeof(*secy));
+    secy->rx_sc = temp_rx_sc;
     return VTSS_RC_OK;
 }
 
@@ -4407,12 +4388,7 @@ static vtss_rc vtss_macsec_secy_controlled_set_priv(vtss_state_t              *v
     if (secy->controlled_port_enabled == enable) {
         return VTSS_RC_OK; // Nothing to do
     }
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
     for (sc = 0; sc < max_sc_rx; sc++) {
         if (secy->rx_sc[sc] == NULL) {
             continue;
@@ -4429,7 +4405,6 @@ static vtss_rc vtss_macsec_secy_controlled_set_priv(vtss_state_t              *v
             }
         }
     }
-
     for (sa = 0; sa < VTSS_MACSEC_SA_PER_SC; sa++) {
         if (secy->tx_sc.sa[sa] != NULL) {
             if (secy->tx_sc.sa[sa]->enabled) {
@@ -4469,11 +4444,11 @@ static vtss_rc vtss_macsec_tx_sa_status_get_priv(vtss_state_t                *vt
 
     if (xpn) {
         if (aes_128) {
-            MACSEC_CNT64_RD(port.port_no, VTSS_MACSEC_INGR_XFORM_RECORD_REGS_XFORM_REC_DATA10(record),
-                            VTSS_MACSEC_INGR_XFORM_RECORD_REGS_XFORM_REC_DATA11(record), value);
+            MACSEC_CNT64_RD(port.port_no, VTSS_MACSEC_EGR_XFORM_RECORD_REGS_XFORM_REC_DATA10(record),
+                                                  VTSS_MACSEC_EGR_XFORM_RECORD_REGS_XFORM_REC_DATA11(record), value);
         } else {
-            MACSEC_CNT64_RD(port.port_no, VTSS_MACSEC_INGR_XFORM_RECORD_REGS_XFORM_REC_DATA14(record),
-                            VTSS_MACSEC_INGR_XFORM_RECORD_REGS_XFORM_REC_DATA15(record), value);
+            MACSEC_CNT64_RD(port.port_no, VTSS_MACSEC_EGR_XFORM_RECORD_REGS_XFORM_REC_DATA14(record),
+                                                  VTSS_MACSEC_EGR_XFORM_RECORD_REGS_XFORM_REC_DATA15(record), value);
         }
         /* Workaround for Packet Number Transmit (i.e. NextPN - 1) */
         value += 1;
@@ -4493,7 +4468,6 @@ static vtss_rc vtss_macsec_tx_sa_status_get_priv(vtss_state_t                *vt
     return VTSS_RC_OK;
 }
 
-
 static vtss_rc vtss_macsec_secy_port_status_get_priv(vtss_state_t                      *vtss_state,
                                                      const vtss_macsec_port_t          port,
                                                      vtss_macsec_secy_port_status_t    *const status,
@@ -4510,12 +4484,7 @@ static vtss_rc vtss_macsec_secy_port_status_get_priv(vtss_state_t               
     if (secy->conf.validate_frames == VTSS_MACSEC_VALIDATE_FRAMES_STRICT) {
         strict = 1;
     }
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
 
     for (sc = 0; sc < max_sc_rx; sc++) {
         if (secy->rx_sc[sc] == NULL) {
@@ -4586,7 +4555,6 @@ static vtss_rc vtss_macsec_rx_sc_add_priv(vtss_state_t              *vtss_state,
     u16 sc_secy = 0, sc_conf = 0, sc;
     u16 max_sc_rx;
     BOOL found_sc_in_secy = 0, found_sc_in_conf = 0;
-    mepa_timeofday_t tod;
 
     if (!check_resources(vtss_state, port.port_no, 1, secy_id)) {
         VTSS_E("HW resources exhausted, port_no:%d  port_id:%d, secy_id:%d", port.port_no, port.port_id, secy_id);
@@ -4594,12 +4562,7 @@ static vtss_rc vtss_macsec_rx_sc_add_priv(vtss_state_t              *vtss_state,
     }
 
     VTSS_RC(is_sci_valid(vtss_state, port.port_no, sci));
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
 
     for (sc = 0; sc < max_sc_rx; sc++) {
         if (sci_cmp(sci, &vtss_state->macsec_conf[port.port_no].rx_sc[sc].sci)) {
@@ -4637,8 +4600,7 @@ static vtss_rc vtss_macsec_rx_sc_add_priv(vtss_state_t              *vtss_state,
     secy->rx_sc[sc_secy]->conf.replay_protect = secy->conf.replay_protect;
     secy->rx_sc[sc_secy]->conf.replay_window = secy->conf.replay_window;
     secy->rx_sc[sc_secy]->conf.confidentiality_offset = secy->conf.confidentiality_offset;
-    MEPA_TIME_OF_DAY(tod);
-    secy->rx_sc[sc_secy]->status.created_time = tod.sec; // TimeOfDay in seconds
+    secy->rx_sc[sc_secy]->status.created_time = MEPA_UPTIME_SECONDS();
     secy->rx_sc[sc_secy]->in_use = 1;
 
     return VTSS_RC_OK;
@@ -4649,14 +4611,14 @@ static vtss_rc vtss_macsec_tx_sc_set_priv(vtss_state_t              *vtss_state,
                                           const u32                 secy_id)
 {
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
-    mepa_timeofday_t tod;
+    time_t uptime_seconds;
 
     VTSS_RC(is_sci_valid(vtss_state, port.port_no, &secy->sci));
 
-    MEPA_TIME_OF_DAY(tod);
-    secy->tx_sc.status.created_time = tod.sec; // 802.1AE 10.7.12
-    secy->tx_sc.status.started_time = tod.sec; // 802.1AE 10.7.12
-    secy->tx_sc.status.stopped_time = 0;       // 802.1AE 10.7.12
+    uptime_seconds = MEPA_UPTIME_SECONDS();
+    secy->tx_sc.status.created_time = uptime_seconds; // 802.1AE 10.7.12
+    secy->tx_sc.status.started_time = uptime_seconds; // 802.1AE 10.7.12
+    secy->tx_sc.status.stopped_time = 0;              // 802.1AE 10.7.12
     secy->tx_sc.in_use = 1;
     memcpy(&secy->tx_sc.status.sci,  &secy->sci, sizeof(vtss_macsec_sci_t));
     return VTSS_RC_OK;
@@ -4675,7 +4637,6 @@ static vtss_rc vtss_macsec_rx_sa_set_priv(vtss_state_t                  *vtss_st
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
     vtss_macsec_match_pattern_t *match = &secy->pattern[VTSS_MACSEC_MATCH_ACTION_CONTROLLED_PORT][VTSS_MACSEC_DIRECTION_INGRESS];
     u32 sc, record = 0;
-    mepa_timeofday_t tod;
     BOOL create_record = 1;
     vtss_macsec_internal_secy_t secy_tmp;
     vtss_macsec_internal_rx_sa_t sa_tmp;
@@ -4700,6 +4661,16 @@ static vtss_rc vtss_macsec_rx_sa_set_priv(vtss_state_t                  *vtss_st
         if (secy->rx_sc[sc]->sa[an] == NULL) {
             return VTSS_RC_OK;
         }
+    }
+
+    /* The MACsec Packet with PN = 0 is considered as BAD tag packet and MACsec engine will drop the packet
+     * In case of XPN after the packet 0xFFFFFFFF then packet will have packet number in Sectag as 0
+     * To avoid Drop of this packet CHECK_PN = 0 in case of XPN Cipher suit
+     */
+    if ((secy->conf.current_cipher_suite == VTSS_MACSEC_CIPHER_SUITE_GCM_AES_XPN_128) ||
+        (secy->conf.current_cipher_suite == VTSS_MACSEC_CIPHER_SUITE_GCM_AES_XPN_256)) {
+
+        CSR_WRM(port.port_no, VTSS_MACSEC_INGR_FRAME_MATCHING_HANDLING_CTRL_SAM_NM_PARAMS, 0, VTSS_F_MACSEC_INGR_FRAME_MATCHING_HANDLING_CTRL_SAM_NM_PARAMS_CHECK_PN);
     }
 
     if (!vtss_state->sync_calling_private) {
@@ -4754,8 +4725,7 @@ static vtss_rc vtss_macsec_rx_sa_set_priv(vtss_state_t                  *vtss_st
         secy->rx_sc[sc]->sa[an]->status.lowest_pn = lowest_pn.pn;
         secy->rx_sc[sc]->sa[an]->status.pn_status.lowest_pn = lowest_pn; // Rev-B
         secy->rx_sc[sc]->sa[an]->in_use = 1;
-        MEPA_TIME_OF_DAY(tod);
-        secy->rx_sc[sc]->sa[an]->status.created_time = tod.sec; // TimeOfDay in seconds
+        secy->rx_sc[sc]->sa[an]->status.created_time = MEPA_UPTIME_SECONDS();
     }
 
     if (vtss_state->warm_start_cur) {
@@ -4940,7 +4910,7 @@ static vtss_rc vtss_macsec_rx_sa_lowest_pn_update_priv(vtss_state_t             
         }
 
         if (lowest_pn.pn > (next_pn + secy->conf.replay_window)) {
-            u32 new_record;
+            u32 new_record = 0;
             vtss_macsec_match_pattern_t *match = &secy->pattern[VTSS_MACSEC_MATCH_ACTION_CONTROLLED_PORT][VTSS_MACSEC_DIRECTION_INGRESS];
             VTSS_D("SA must be changed! (lowest_pn > next_pn + replay_window). Lowest_pn:%u next_pn:%u replay_window:%u",
                    lowest_pn.pn, next_pn, secy->conf.replay_window);
@@ -5079,7 +5049,6 @@ static vtss_rc vtss_macsec_tx_sa_set_priv(vtss_state_t                   *vtss_s
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
     vtss_macsec_match_pattern_t *match = &secy->pattern[VTSS_MACSEC_MATCH_ACTION_CONTROLLED_PORT][VTSS_MACSEC_DIRECTION_EGRESS];
     u32 record = 0;
-    mepa_timeofday_t tod;
     BOOL create_record = 1;
     vtss_macsec_internal_secy_t secy_tmp;
     vtss_macsec_internal_tx_sa_t sa_tmp;
@@ -5158,13 +5127,11 @@ static vtss_rc vtss_macsec_tx_sa_set_priv(vtss_state_t                   *vtss_s
         }
         secy->tx_sc.sa[an]->status.pn_status.next_pn = next_pn;
         secy->tx_sc.sa[an]->in_use = 1;
-        MEPA_TIME_OF_DAY(tod);
-        secy->tx_sc.sa[an]->status.created_time = tod.sec; // TimeOfDay in seconds
+        secy->tx_sc.sa[an]->status.created_time = MEPA_UPTIME_SECONDS();
     }
     if (vtss_state->warm_start_cur) {
         return VTSS_RC_OK;
     }
-
     if (macsec_sa_match_set(vtss_state, port.port_no, EGRESS, record, match, secy, 0, 0, 0, 0) != VTSS_RC_OK) {
         VTSS_E("Could not program the SA match");
         return dbg_counter_incr(vtss_state, port.port_no, VTSS_RC_ERR_MACSEC_COULD_NOT_PRG_SA_MATCH);
@@ -5195,10 +5162,9 @@ static vtss_rc vtss_macsec_tx_sa_activate_priv(vtss_state_t                  *vt
                                                const u16                     an)
 {
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
-    mepa_timeofday_t tod;
+    time_t uptime_seconds;
     u32 old_an, i;
     BOOL an_in_use = 0;
-
     if (vtss_state->sync_calling_private) {
         if (secy->tx_sc.sa[an] == NULL) {
             return VTSS_RC_OK;
@@ -5215,12 +5181,10 @@ static vtss_rc vtss_macsec_tx_sa_activate_priv(vtss_state_t                  *vt
     VTSS_MACSEC_ASSERT(an >= VTSS_MACSEC_SA_PER_SC_MAX, "AN is invalid");
     VTSS_MACSEC_ASSERT(secy->tx_sc.sa[an] == NULL, "AN does not exist");
     VTSS_MACSEC_ASSERT(!secy->tx_sc.sa[an]->in_use, "AN is not in use");
-
     old_an = secy->tx_sc.status.encoding_sa;
     if (secy->tx_sc.sa[old_an] != NULL) {
         an_in_use = secy->tx_sc.sa[old_an]->enabled;
     }
-
     /* Activate chip SA Flow */
     if (an_in_use && (old_an < VTSS_MACSEC_SA_PER_SC_MAX) && (old_an != an)) {
         if (VTSS_RC_COLD(macsec_sa_inuse(vtss_state, port.port_no, secy->tx_sc.sa[an]->record, EGRESS, MACSEC_ENABLE)) != VTSS_RC_OK) {
@@ -5251,11 +5215,10 @@ static vtss_rc vtss_macsec_tx_sa_activate_priv(vtss_state_t                  *vt
         secy->tx_sc.sa[old_an]->status.in_use = 0;
     }
 
-    MEPA_TIME_OF_DAY(tod);
-    secy->tx_sc.sa[an]->status.started_time = tod.sec; // TimeOfDay in seconds
+    uptime_seconds = MEPA_UPTIME_SECONDS();
+    secy->tx_sc.sa[an]->status.started_time = uptime_seconds;
     secy->tx_sc.sa[an]->enabled = 1;
     secy->tx_sc.sa[an]->status.in_use = 1;
-
     an_in_use = 0;
     for (i = 0; i < VTSS_MACSEC_SA_PER_SC_MAX; i++ ) {
         if (secy->tx_sc.sa[i] == NULL || (i == an)) {
@@ -5268,7 +5231,7 @@ static vtss_rc vtss_macsec_tx_sa_activate_priv(vtss_state_t                  *vt
     }
 
     if (!an_in_use) {
-        secy->tx_sc.status.started_time = tod.sec;
+        secy->tx_sc.status.started_time = uptime_seconds;
     }
     secy->tx_sc.status.encoding_sa = an;
     secy->tx_sc.status.enciphering_sa = an;
@@ -5282,7 +5245,7 @@ static vtss_rc vtss_macsec_rx_sa_activate_priv(vtss_state_t                  *vt
                                                const vtss_macsec_sci_t       *const sci,
                                                const u16                     an)
 {
-    mepa_timeofday_t tod;
+    time_t uptime_seconds;
     vtss_macsec_internal_secy_t *secy = &vtss_state->macsec_conf[port.port_no].secy[secy_id];
     u32 sc, i, sa_in_use = 0;
 
@@ -5315,8 +5278,8 @@ static vtss_rc vtss_macsec_rx_sa_activate_priv(vtss_state_t                  *vt
         return VTSS_RC_OK;
     }
 
-    MEPA_TIME_OF_DAY(tod);
-    secy->rx_sc[sc]->sa[an]->status.started_time = tod.sec; // TimeOfDay in seconds
+    uptime_seconds = MEPA_UPTIME_SECONDS();
+    secy->rx_sc[sc]->sa[an]->status.started_time = uptime_seconds;
     secy->rx_sc[sc]->sa[an]->status.in_use = 1;
     secy->rx_sc[sc]->sa[an]->enabled = 1;
 
@@ -5330,7 +5293,7 @@ static vtss_rc vtss_macsec_rx_sa_activate_priv(vtss_state_t                  *vt
         }
     }
     if (!sa_in_use) {
-        secy->rx_sc[sc]->status.started_time = tod.sec;
+        secy->rx_sc[sc]->status.started_time = uptime_seconds;
     }
     return VTSS_RC_OK;
 }
@@ -5730,12 +5693,7 @@ static vtss_rc vtss_macsec_controlled_counters_get_priv(vtss_state_t            
     vtss_state->macsec_conf[port.port_no].secy[secy_id].controlled_cnt.if_out_pkts = 0;
 
     VTSS_N("if_in_octets:%" PRIu64 "", counters->if_in_octets);
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
 
     if (secy != NULL && secy->in_use) {
         VTSS_N("secy_id:%u, in_use:%u", secy_id, secy->in_use);
@@ -6053,6 +6011,8 @@ static vtss_rc vtss_macsec_uncontrolled_counters_get_priv(vtss_state_t          
     u64 ctrl_if_in_octets  = 0;
 #endif
 
+    memset(counters, 0, sizeof(*counters));
+
     // From IEEE 802.1AE-2006 - Section 10.7.3 : The ifInDiscards and ifInErrors counts are zero, as the operation of the Uncontrolled Port provides no error checking or occasion to discard packets, beyond that
     //                                           provided by its users or by the entity supporting the Common Port.
     counters->if_in_discards = 0;
@@ -6067,12 +6027,7 @@ static vtss_rc vtss_macsec_uncontrolled_counters_get_priv(vtss_state_t          
     macsec_port.service_id = 0;
     macsec_port.port_id = 0;
     macsec_port.port_no = port_no;
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     for (secy_id = 0; secy_id < max_secy; secy_id++) {
         secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
@@ -6136,12 +6091,7 @@ static vtss_rc vtss_macsec_counters_clear_priv(vtss_state_t                  *vt
     vtss_macsec_mac_counters_t mac_cntrs;
 
     VTSS_RC(vtss_macsec_common_counters_get_priv(vtss_state, port_no, &common_counters, TRUE));
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     /* Clear Mac block counters */
     VTSS_RC(vtss_macsec_lmac_counters_get_priv(vtss_state, port_no, &mac_cntrs, TRUE));
@@ -6844,7 +6794,6 @@ static vtss_rc macsec_txsa_inst_count_get_priv(vtss_state_t             *vtss_st
     vtss_macsec_internal_secy_t *secy;
     u8 txsa_idx;
     vtss_sc_inst_count_t *sc_inst_count = sc_count;
-
     VTSS_D("TxSA - Port:%d, SecY:%d, SC:%d", port_no, secy_id, sc_id);
     secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
 
@@ -6867,17 +6816,17 @@ static vtss_rc macsec_rxsc_inst_count_get_priv(vtss_state_t             *vtss_st
                                                vtss_secy_inst_count_t   *secy_count)
 {
     vtss_macsec_internal_secy_t *secy;
-    u8 rxsc_idx;
+    u8 rxsc_idx, max_sc;
     vtss_rc rc = VTSS_RC_OK;
     vtss_sc_inst_count_t *sc_inst_count;
     vtss_secy_inst_count_t *secy_inst_count = secy_count;
-
     VTSS_D("RxSC - Port:%d, SecY:%d", port_no, secy_id);
     secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
     secy_inst_count->no_rxsc = 0;
+    max_sc = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     /* Rx SC Count */
-    for (rxsc_idx = 0; rxsc_idx < VTSS_MACSEC_MAX_SC_RX; rxsc_idx++) {
+    for (rxsc_idx = 0; rxsc_idx < max_sc; rxsc_idx++) {
         if ((secy->rx_sc[rxsc_idx] != NULL) && (secy->rx_sc[rxsc_idx]->in_use == TRUE)) {
             VTSS_D("RxSC id:%d", rxsc_idx);
             memcpy(&secy_inst_count->rx_sci[secy_inst_count->no_rxsc],
@@ -6902,18 +6851,30 @@ static vtss_rc macsec_inst_count_get_priv(vtss_state_t              *vtss_state,
 {
     vtss_rc rc = VTSS_RC_OK;
     u8 secy_idx;
-    u8 max_secy;
+    u8 max_secy, max_sc;
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
+    max_sc = vtss_state->macsec_capability[port_no].max_sc_cnt;
+
     vtss_macsec_internal_secy_t *secy;
-    vtss_macsec_inst_count_t inst_counts;
-    vtss_secy_inst_count_t *secy_inst_counts;
+    vtss_macsec_inst_count_t inst_counts = vtss_state->macsec_capability[port_no].inst_counts;
 
-    VTSS_D("Macsec Instance - Port:%d", port_no);
-    memset(&inst_counts, 0, sizeof(vtss_macsec_inst_count_t));
+    /* Clearing the contents of the structure */
+    /* Directly cannot memset the structure to 0 because it has pointer members which will then will
+     * not point to any memory so memset contents of pointer seperately */
+    for(u8 i = 0; i < max_secy; i++) {
+        memset(&inst_counts.secy_vport[i] , 0 , sizeof(inst_counts.secy_vport[i]));
+        memset(&(*inst_counts.secy_inst_count[i].rxsc_id), 0 , sizeof(uint8_t) * max_sc);
+        memset(&(*inst_counts.secy_inst_count[i].rx_sci), 0 , sizeof(vtss_macsec_sci_t) * max_sc);
+        memset(&(*inst_counts.secy_inst_count[i].rxsc_inst_count), 0 , sizeof(vtss_sc_inst_count_t) * max_sc);
 
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
+        uint8_t *rxsc_id = inst_counts.secy_inst_count[i].rxsc_id;
+        mepa_macsec_sci_t *rx_sci = inst_counts.secy_inst_count[i].rx_sci;
+        mepa_sc_inst_count_t *rxsc_inst_count = inst_counts.secy_inst_count[i].rxsc_inst_count;
+	memset(&inst_counts.secy_inst_count[i], 0, sizeof(inst_counts.secy_inst_count[i]));
+
+        inst_counts.secy_inst_count[i].rxsc_id = rxsc_id;
+        inst_counts.secy_inst_count[i].rx_sci = rx_sci;
+        inst_counts.secy_inst_count[i].rxsc_inst_count = rxsc_inst_count;
     }
 
     for (secy_idx = 0; secy_idx < max_secy; secy_idx++) {
@@ -6925,12 +6886,9 @@ static vtss_rc macsec_inst_count_get_priv(vtss_state_t              *vtss_state,
             /* Tx SC Count */
             if (secy->tx_sc.in_use == TRUE) {
                 VTSS_D("TxSC id:0");
-                secy_inst_counts = &inst_counts.secy_inst_count[inst_counts.no_secy];
-                memcpy(&secy_inst_counts->tx_sci,
-                       (const void *)&secy->sci, sizeof(vtss_macsec_sci_t));
-                secy_inst_counts->no_txsc += 1;
-                secy_inst_counts->txsc_id = 0;
-                rc = macsec_txsa_inst_count_get_priv(vtss_state, port_no, secy_idx, 0, &secy_inst_counts->txsc_inst_count);
+                inst_counts.secy_inst_count[inst_counts.no_secy].no_txsc += 1;
+                inst_counts.secy_inst_count[inst_counts.no_secy].txsc_id = 0;
+                rc = macsec_txsa_inst_count_get_priv(vtss_state, port_no, secy_idx, 0, &inst_counts.secy_inst_count[inst_counts.no_secy].txsc_inst_count);
                 if (rc != VTSS_RC_OK) {
                     VTSS_E("TxSA Instance count access Error");
                 }
@@ -6938,8 +6896,7 @@ static vtss_rc macsec_inst_count_get_priv(vtss_state_t              *vtss_state,
             VTSS_D("TxSC count:%d", inst_counts.secy_inst_count[inst_counts.no_secy].no_txsc);
 
             /* Rx SC Count */
-            secy_inst_counts = &inst_counts.secy_inst_count[inst_counts.no_secy];
-            rc = macsec_rxsc_inst_count_get_priv(vtss_state, port_no, secy_idx, secy_inst_counts);
+            rc = macsec_rxsc_inst_count_get_priv(vtss_state, port_no, secy_idx, &inst_counts.secy_inst_count[inst_counts.no_secy]);
             if (rc != VTSS_RC_OK) {
                 VTSS_E("RxSC Instance count access Error");
             }
@@ -6981,12 +6938,7 @@ static vtss_rc vtss_macsec_egr_intr_sa_get_priv(vtss_state_t         *vtss_state
         VTSS_E("Macsec Event sequence threshold get Error");
         return rc;
     }
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     mport.port_no = port_no;
     for (secy_idx = 0; secy_idx < max_secy; secy_idx++) {
@@ -7165,12 +7117,7 @@ static vtss_rc vtss_macsec_rxsc_counters_clear_priv(vtss_state_t *vtss_state,
     u8 rxsc_idx;
 
     secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_rxsc = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_rxsc = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_rxsc = vtss_state->macsec_capability[port_no].max_sc_cnt;
 
     /* Clear Rx SC counters */
     for (rxsc_idx = 0; rxsc_idx < max_rxsc; rxsc_idx++) {
@@ -7571,12 +7518,7 @@ vtss_rc vtss_macsec_secy_conf_update(const vtss_inst_t                 inst,
         for (i = 0; i < 6; ++i) {
             secy->sci.mac_addr.addr[i] = secy->conf.mac_addr.addr[i];
         }
-
-        if (phy_is_1g(vtss_state, port.port_no)) {
-            max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-        } else {
-            max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-        }
+        max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
 
         if (vtss_state->warm_start_cur) {
             /* Delete the SA configuration because Secy configuration has changed */
@@ -7814,12 +7756,7 @@ static vtss_rc vtss_macsec_port_get_next_priv(vtss_state_t                *vtss_
     vtss_macsec_internal_secy_t *secy;
     u32 i, max_secy;
     BOOL found_port = 0;
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     for (i = 0; i < max_secy; i++) {
         secy = &vtss_state->macsec_conf[port_no].secy[i];
@@ -7884,12 +7821,7 @@ static vtss_rc vtss_macsec_rx_sc_get_next_priv(vtss_state_t                *vtss
     } else {
         VTSS_I("Search SCI == NULL");
     }
-
-    if (phy_is_1g(vtss_state, port.port_no)) {
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-    } else {
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-    }
+    max_sc_rx = vtss_state->macsec_capability[port.port_no].max_sc_cnt;
 
     while (search_cont) {
         search_cont = 0;
@@ -8575,15 +8507,12 @@ vtss_rc vtss_macsec_secy_cap_get(const vtss_inst_t             inst,
     VTSS_D("Port: %u", port_no);
     VTSS_ENTER();
     if ((rc = vtss_inst_macsec_port_no_check(inst, &vtss_state, port_no)) == VTSS_RC_OK) {
-        if (phy_is_1g(vtss_state, port_no)) {
-            cap->max_peer_scs = VTSS_MACSEC_1G_MAX_SA / 2;
-            cap->max_receive_keys = VTSS_MACSEC_1G_MAX_SA;
-            cap->max_transmit_keys = VTSS_MACSEC_1G_MAX_SA;
-        } else {
-            cap->max_peer_scs = VTSS_MACSEC_10G_MAX_SA / 2;
-            cap->max_receive_keys = VTSS_MACSEC_10G_MAX_SA;
-            cap->max_transmit_keys = VTSS_MACSEC_10G_MAX_SA;
-        }
+        // The actual number of Rx and Tx SAs could be read in bits[7:0] of
+        // VTSS_MACSEC_INGR_EIP160_IP_VER_CFG_REGS_EIP160_CONFIG and
+        // VTSS_MACSEC_EGR_EIP160_IP_VER_CFG_REGS_EIP160_CONFIG
+        cap->max_peer_scs = vtss_state->macsec_capability[port_no].max_sc_cnt;
+	cap->max_receive_keys = vtss_state->macsec_capability[port_no].max_sa_cnt;
+	cap->max_transmit_keys = vtss_state->macsec_capability[port_no].max_sa_cnt;
     }
     cap->ciphersuite_cap = VTSS_MACSEC_CAP_GCM_AES_128 | VTSS_MACSEC_CAP_GCM_AES_256;
 
@@ -9934,12 +9863,7 @@ static vtss_rc vtss_debug_print_macsec_counters(vtss_state_t              *vtss_
     macsec_port.service_id = 0;
     macsec_port.port_id = 0;
     macsec_port.port_no = port_no;
-
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
 
     for (secy_id = 0; secy_id < max_secy; secy_id++) {
         secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
@@ -9995,12 +9919,7 @@ static vtss_rc vtss_debug_print_macsec_counters(vtss_state_t              *vtss_
                 vtss_macsec_debug_print_counter(pr, "Packets protected", NULL, &tx_sa_counters.out_pkts_protected);
                 vtss_macsec_debug_print_counter(pr, "Packets encrypted", NULL, &tx_sa_counters.out_pkts_encrypted);
             }
-
-            if (phy_is_1g(vtss_state, port_no)) {
-                max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-            } else {
-                max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-            }
+            max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
             //
             // Rx Secy
             //
@@ -10065,15 +9984,9 @@ static vtss_rc vtss_debug_print_macsec_conf(vtss_state_t              *vtss_stat
     if (!vtss_debug_group_enabled(pr, info, VTSS_DEBUG_GROUP_MACSEC)) {
         return VTSS_RC_OK;
     }
-    if (phy_is_1g(vtss_state, port_no)) {
-        max_secy = VTSS_MACSEC_1G_MAX_SECY;
-        max_sc_rx = VTSS_MACSEC_1G_MAX_SC_RX;
-        max_sa_rx = VTSS_MACSEC_1G_MAX_SA_RX;
-    } else {
-        max_secy = VTSS_MACSEC_10G_MAX_SECY;
-        max_sc_rx = VTSS_MACSEC_10G_MAX_SC_RX;
-        max_sa_rx = VTSS_MACSEC_10G_MAX_SA_RX;
-    }
+    max_secy = vtss_state->macsec_capability[port_no].max_secy_cnt;
+    max_sc_rx = vtss_state->macsec_capability[port_no].max_sc_cnt;
+    max_sa_rx = vtss_state->macsec_capability[port_no].max_sa_cnt;
 
     for (secy_id = 0; secy_id < max_secy; secy_id++) {
         secy = &vtss_state->macsec_conf[port_no].secy[secy_id];
@@ -10421,13 +10334,7 @@ static vtss_rc vtss_macsec_dbg_sa_flow_ctrl_reg_dump_priv(vtss_state_t *vtss_sta
     u16             i;
     u32             value;
     u8   no_entries = 0;
-    BOOL phy10g = FALSE;
-    VTSS_RC(phy_type_get(vtss_state, port_no, &phy10g));
-    if (phy10g) {
-        no_entries = VTSS_MACSEC_10G_MAX_SA;
-    } else {
-        no_entries = VTSS_MACSEC_1G_MAX_SA;
-    }
+    no_entries = vtss_state->macsec_capability[port_no].max_sa_cnt;
 
     pr("\n\nIngress SA_MATCH_FLOW_CONTROL_PARAMS_IGR - 16/64 flow control words SA parameter set.\n\n");
     for (i = 0; i < no_entries; i++) {
@@ -10515,13 +10422,7 @@ static vtss_rc vtss_macsec_dbg_sa_reg_dump_priv(vtss_state_t *vtss_state,
     u16  i;
     u32  value;
     u8   no_entries = 0;
-    BOOL phy10g = FALSE;
-    VTSS_RC(phy_type_get(vtss_state, port_no, &phy10g));
-    if (phy10g) {
-        no_entries = VTSS_MACSEC_10G_MAX_SA;
-    } else {
-        no_entries = VTSS_MACSEC_1G_MAX_SA;
-    }
+    no_entries = vtss_state->macsec_capability[port_no].max_sa_cnt;
     pr("\n\nSA: Ingress SA Match Params\n\n");
 
     for (i = 0; i < no_entries; i++) {
@@ -10568,13 +10469,7 @@ static vtss_rc vtss_macsec_dbg_xform_reg_dump_priv(vtss_state_t *vtss_state,
     u16             baseaddr, addr;
     u8              rec_size = 0, reg_num;
     u8   no_entries = 0;
-    BOOL phy10g = FALSE;
-    VTSS_RC(phy_type_get(vtss_state, port_no, &phy10g));
-    if (phy10g) {
-        no_entries = VTSS_MACSEC_10G_MAX_SA;
-    } else {
-        no_entries = VTSS_MACSEC_1G_MAX_SA;
-    }
+    no_entries = vtss_state->macsec_capability[port_no].max_sa_cnt;
     pr("\n\nIngress XFORM_RECORD_REGS - Transform context records\n\n");
     CSR_RD(port_no, VTSS_MACSEC_INGR_FRAME_MATCHING_HANDLING_CTRL_MISC_CONTROL, &value1);
     rec_size = VTSS_X_MACSEC_INGR_FRAME_MATCHING_HANDLING_CTRL_MISC_CONTROL_XFORM_REC_SIZE(value1);
@@ -10679,7 +10574,6 @@ vtss_rc vtss_macsec_dbg_reg_dump(const vtss_inst_t             inst,
     VTSS_EXIT();
     return rc;
 }
-
 
 #define CSR_RD_TST(p, txt, io_reg, value)     \
     {   \
@@ -10970,7 +10864,39 @@ vtss_rc vtss_macsec_dbg_update_seq_set(const vtss_inst_t        inst,
     return rc;
 }
 
+vtss_rc vtss_phy_macsec_bypass_set(vtss_state_t *vtss_state,
+                                   const vtss_port_no_t port_no,
+                                   BOOL macsec_bypass)
+{
+    u32 reg_val;
+    if(macsec_bypass) {// if macsec_en is set then setting in bypass mode
+        //Macsec bypass enabled for Ingress
+        CSR_RD(port_no, VTSS_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, &reg_val);
+        reg_val &= ~VTSS_F_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_ENA;
+        reg_val |= VTSS_F_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_BYPASS_ENA;
+        CSR_COLD_WR(port_no, VTSS_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, reg_val);
+        // MACsec disabled needs to added here
+        //Macsec bypass enabled for egress
+        CSR_RD(port_no, VTSS_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, &reg_val);
+        reg_val &= ~VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_ENA;
+        reg_val |= VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_BYPASS_ENA;
+        CSR_COLD_WR(port_no, VTSS_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, reg_val);
 
+    }
+    else {
+        // MACsec bypass disabled for Ingress
+        CSR_RD(port_no, VTSS_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, &reg_val);
+        reg_val |= VTSS_F_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_ENA;
+        reg_val &= ~VTSS_F_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_BYPASS_ENA;
+        CSR_COLD_WR(port_no, VTSS_MACSEC_INGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, reg_val);
+        // Macsec bypass disabled for Egress
+        CSR_RD(port_no, VTSS_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, &reg_val);
+        reg_val |= VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_ENA;
+        reg_val &= ~VTSS_F_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG_MACSEC_BYPASS_ENA;
+        CSR_COLD_WR(port_no, VTSS_MACSEC_EGR_MACSEC_CTL_REGS_MACSEC_ENA_CFG, reg_val);
+    }
+    return VTSS_RC_OK;
+}
 
 
 // ***************************************************************************

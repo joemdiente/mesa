@@ -11,6 +11,36 @@ pages:
 
     - name: "Release notes"
       pages:
+        - name: "MESA-2024.12"
+          src:  "mesa/docs/release-notes/mesa-2024.12.adoc"
+
+        - name: "MESA-2024.09"
+          src:  "mesa/docs/release-notes/mesa-2024.09.adoc"
+
+        - name: "MESA-2024.06-1"
+          src:  "mesa/docs/release-notes/mesa-2024.06-1.adoc"
+
+        - name: "MESA-2024.06"
+          src:  "mesa/docs/release-notes/mesa-2024.06.adoc"
+
+        - name: "MESA-2024.06"
+          src:  "mesa/docs/release-notes/mesa-2024.06.adoc"
+
+        - name: "MESA-2024.03"
+          src:  "mesa/docs/release-notes/mesa-2024.03.adoc"
+
+        - name: "MESA-2023.12"
+          src:  "mesa/docs/release-notes/mesa-2023.12.adoc"
+
+        - name: "MESA-2023.09"
+          src:  "mesa/docs/release-notes/mesa-2023.09.adoc"
+
+        - name: "MESA-2023.06"
+          src:  "mesa/docs/release-notes/mesa-2023.06.adoc"
+
+        - name: "MESA-2023.03"
+          src:  "mesa/docs/release-notes/mesa-2023.03.adoc"
+
         - name: "MESA-2022.12"
           src:  "mesa/docs/release-notes/mesa-2022.12.adoc"
 
@@ -179,6 +209,24 @@ pages:
           - src: "mesa/docs/examples/ts-transparent-clock.adoc"
             name: "Description"
           - src: "mesa/demo/examples/ts-transparent-clock.c"
+
+        - name: "Dynamic port"
+          pages:
+          - src: "mesa/docs/examples/dynamic-port.adoc"
+            name: "Description"
+          - src: "mesa/demo/examples/port_dynamic.c"
+
+        - name: "Port bulk configuration"
+          pages:
+          - src: "mesa/docs/examples/port_conf_bulk.adoc"
+            name: "Description"
+          - src: "mesa/demo/examples/port_conf_bulk.c"
+
+        - name: "Port bulk configuration"
+          pages:
+          - src: "mesa/docs/examples/port_conf_bulk.adoc"
+            name: "Description"
+          - src: "mesa/demo/examples/port_conf_bulk.c"
 
     - name: "MEBA (Board API)"
       src: "mesa/docs/meba/meba.adoc"

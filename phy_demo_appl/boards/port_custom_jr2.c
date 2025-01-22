@@ -614,7 +614,7 @@ static vtss_rc srv2_nid_i2c_read(vtss_port_no_t port_no, u8 i2c_addr, u8 addr, u
     CUSTOM_D("port:%d\n", port_no);
 
     if (entry->cap & PORT_CAP_DUAL_COPPER) {
-        return vtss_phy_i2c_read(NULL, port_no, port_no, addr, i2c_addr, data, cnt, word_access);
+        return vtss_phy_i2c_read(NULL, port_no, port_no, addr, i2c_addr, word_access, cnt, data);
     }
 
     if (jr2_i2c_read != NULL) {
@@ -631,7 +631,7 @@ static vtss_rc srv2_nid_i2c_write(vtss_port_no_t port_no, u8 i2c_addr, u8 addr, 
     u8                  i2c_data[3];
 
     if (entry->cap & PORT_CAP_DUAL_COPPER) {
-        return vtss_phy_i2c_write(NULL, port_no, port_no, addr, i2c_addr, data, 2, word_access);
+        return vtss_phy_i2c_write(NULL, port_no, port_no, addr, i2c_addr, word_access, 2, data);
     }
 
     if (jr2_i2c_write != NULL) {
@@ -1730,7 +1730,7 @@ static BOOL vtss_board_probe_jr2_cu48(vtss_board_t *board, vtss_board_info_t *bo
             entry->mac_if              = VTSS_PORT_INTERFACE_QSGMII;
             entry->cap                 = PORT_CAP_TRI_SPEED_COPPER;
 #ifdef VTSS_SW_OPTION_POE
-            entry->poe_chip_port       =  entry->map.chip_port;
+            entry->poe_port            =  entry->map.chip_port;
             entry->poe_support         =  port_no < 24 ? TRUE : FALSE;
 #endif
 #if defined(VTSS_CHIP_SPARX_IV_90) || defined(VTSS_CHIP_JAGUAR_2)

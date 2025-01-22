@@ -185,6 +185,7 @@ def compile(ws, odir, preset, c)
 
     if $opt[:simplegrid]
         cmd = "SimpleGridClient -l webstax "
+        cmd << "-e MCHP_DOCKER_NAME=\"ghcr.io/microchip-ung/bsp-buildenv\" -e MCHP_DOCKER_TAG=\"1.20\" "
         cmd << "-w #{$tar} "
         cmd << "-c '#{bcmd}' "
         cmd << "-a #{ws}/#{odir} "
@@ -230,12 +231,6 @@ def compile(ws, odir, preset, c)
             licenses_bin(ws, preset, "#{ws}/#{odir}/licenses.txt", legal_bsp, legal_tc, $yaml['conf']['friendly_name_cur'])
         end
     end
-end
-
-# Create release note
-def release_note()
-    run "#{$top}/.cmake/release_note.rb", "release_note"
-    $res.addSibling(ResultNode.from_file("#{$top}/#{$yaml['conf']['output_dir']}/#{$yaml['conf']['json_status_release_note']}"))
 end
 
 # Check copyrights/licenses
@@ -298,13 +293,6 @@ rescue
 end
 
 if $do_internal_checks
-    begin
-        release_note()
-        run "cp images/release_note_*.txt #{$ws}"
-    rescue
-        $res.addSibling(ResultNode.new("Release note", "Failed"))
-    end
-
     begin
         licenses_create($ws)
     rescue
@@ -372,13 +360,20 @@ step $res, "API Doc" do
         rev = $1
     end
 
+    #MESA-Doc
     run "cd mesa/docs/scripts; #{$rvm_ruby} ./dg.rb -r #{rev} -s #{git_sha}", "doc"
     run "cp ./mesa-doc.html images/.", "doc"
     run "cp ./mesa-doc.html #{$ws}/.", "doc"
+
+    #MEPA-Doc
+    run "cd mepa/docs/scripts; #{$rvm_ruby} ./dg.rb -r #{rev} -s #{git_sha}", "doc"
+    run "cp ./mepa/mepa-doc.html images/.", "doc"
+    run "cp ./mepa/mepa-doc.html #{$ws}/.", "doc"
+
     run "ls", "doc"
 end
 
-if File.exists? "./mesa-doc.html"
+if File.exist? "./mesa-doc.html"
     %x{"cp -r ./mesa-doc.html images/."}
 end
 

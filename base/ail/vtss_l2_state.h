@@ -20,8 +20,8 @@ typedef struct {
 typedef struct {
     BOOL member[VTSS_PORT_ARRAY_SIZE]; /* Egress ports */
     BOOL resv;                         /* Fixed reservation */
-    u32  references;                   /* Number references to entry */
     BOOL cpu_copy;                     /* CPU copy */
+    u32  references;                   /* Number references to entry */
     vtss_packet_rx_queue_t cpu_queue;  /* CPU queue */
 } vtss_pgid_entry_t;
 
@@ -39,8 +39,12 @@ typedef struct {
 #define VTSS_PGIDS VTSS_PGID_JAGUAR_2
 #endif /* VTSS_ARCH_JAGUAR_2 */
 
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
+#if VTSS_OPT_LIGHT
+#define VTSS_PGID_FA 128
+#else
 #define VTSS_PGID_FA (2048 + 65)
+#endif
 #undef VTSS_PGIDS
 #define VTSS_PGIDS VTSS_PGID_FA
 #endif /* VTSS_ARCH_SPARX5 */
@@ -86,7 +90,9 @@ void vtss_mach_macl_set(vtss_vid_mac_t *vid_mac, u32 mach, u32 macl);
 
 #if defined(VTSS_FEATURE_MAC_INDEX_TABLE)
 #define VTSS_MAC_INDEX_VID_CNT 4
-#if defined(VTSS_ARCH_LAN966X_FPGA)
+#if defined(VTSS_ARCH_LAN969X)
+#define VTSS_MAC_INDEX_CNT     4096
+#elif defined(VTSS_ARCH_LAN966X_FPGA)
 #define VTSS_MAC_INDEX_CNT     512
 #else
 #define VTSS_MAC_INDEX_CNT     2048
@@ -151,6 +157,7 @@ typedef struct {
 #define VLAN_FLAGS_FLOOD    0x10
 #define VLAN_FLAGS_MIRROR   0x20
 #define VLAN_FLAGS_FILTER   0x40
+#define VLAN_FLAGS_OT       0x80
 
 /* VLAN entry */
 typedef struct {
@@ -159,7 +166,7 @@ typedef struct {
 #if defined(VTSS_FEATURE_HW_PROT)
     u8          hw_prot_disable[VTSS_PORT_BF_SIZE]; /* Inactive HW protection ports */
 #endif /* VTSS_FEATURE_HW_PROT */
-#if defined(VTSS_FEATURE_VCAP)
+#if defined(VTSS_FEATURE_VLAN_TX_TAG)
     u8          tx_tag[VTSS_PORT_ARRAY_SIZE]; /* Tx tagging */
 #endif
 #if defined(VTSS_FEATURE_L2_ERPS)
@@ -499,7 +506,7 @@ typedef struct {
 typedef struct {
     u32                 max_count; /* Maximum number of rules */
     u32                 poll_idx;  /* Counter polling index */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_sdx_counters_t sdx_table[VTSS_EVC_STAT_CNT];
 #else
     vtss_sdx_counters_t sdx_table[VTSS_SDX_CNT + 1]; /* Allow 1-based indexing (index zero is unused) */
@@ -520,185 +527,207 @@ typedef struct {
 } vtss_rcl_vid_entry_t;
 #endif
 
+#if defined(VTSS_FEATURE_REDBOX)
 typedef struct {
-    /* CIL function pointers */
-    vtss_rc (* mac_table_add)(struct vtss_state_s *vtss_state,
-                              const vtss_mac_table_entry_t *const entry, u32 pgid);
-    vtss_rc (* mac_table_del)(struct vtss_state_s *vtss_state,
-                              const vtss_vid_mac_t *const vid_mac);
-    vtss_rc (* mac_table_get)(struct vtss_state_s *vtss_state,
-                              vtss_mac_table_entry_t *const entry, u32 *pgid);
-    vtss_rc (* mac_table_get_next)(struct vtss_state_s *vtss_state,
-                                   vtss_mac_table_entry_t *const entry, u32 *pgid);
-    vtss_rc (* mac_table_age_time_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mac_table_age)(struct vtss_state_s *vtss_state,
-                              BOOL             pgid_age,
-                              u32              pgid,
-                              BOOL             vid_age,
-                              const vtss_vid_t vid);
-    vtss_rc (* mac_table_status_get)(struct vtss_state_s *vtss_state,
-                                     vtss_mac_table_status_t *const status);
-#if defined(VTSS_FEATURE_MAC_INDEX_TABLE)
-    vtss_rc (* mac_index_update)(struct vtss_state_s *vtss_state);
-#endif
-    vtss_rc (* learn_port_mode_set)(struct vtss_state_s *vtss_state,
-                                    const vtss_port_no_t port_no);
-    vtss_rc (* learn_state_set)(struct vtss_state_s *vtss_state,
-                                const BOOL member[VTSS_PORT_ARRAY_SIZE]);
-#if defined(VTSS_FEATURE_L2_MSTP)
-    vtss_rc (* mstp_vlan_msti_set)(struct vtss_state_s *vtss_state,
-                                   const vtss_vid_t vid);
-    vtss_rc (* mstp_state_set)(struct vtss_state_s *vtss_state,
-                               const vtss_port_no_t port_no,
-                               const vtss_msti_t    msti);
-#endif
-#if defined(VTSS_FEATURE_L2_ERPS)
-    vtss_rc (* erps_vlan_member_set)(struct vtss_state_s *vtss_state,
-                                     const vtss_erpi_t erpi,
-                                     const vtss_vid_t  vid);
-    vtss_rc (* erps_port_state_set)(struct vtss_state_s *vtss_state,
-                                    const vtss_erpi_t    erpi,
-                                    const vtss_port_no_t port_no);
-#endif
-    vtss_rc (* vlan_conf_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* vlan_port_conf_set)(struct vtss_state_s *vtss_state,
-                                   const vtss_port_no_t port_no);
-    vtss_rc (* vlan_port_conf_update)(struct vtss_state_s *vtss_state,
-                                      vtss_port_no_t port_no, vtss_vlan_port_conf_t *conf);
-    vtss_rc (* vlan_port_members_set)(struct vtss_state_s *vtss_state,
-                                      const vtss_vid_t vid);
-    vtss_rc (* vlan_tx_tag_set)(struct vtss_state_s *vtss_state,
-                                const vtss_vid_t vid,
-                                const vtss_vlan_tx_tag_t tx_tag[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* vlan_mask_update)(struct vtss_state_s *vtss_state,
-                                 vtss_vid_t vid, BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* isolated_vlan_set)(struct vtss_state_s *vtss_state,
-                                  const vtss_vid_t vid);
-    vtss_rc (* isolated_port_members_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* aggr_mode_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mirror_port_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mirror_ingress_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mirror_egress_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mirror_cpu_ingress_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* mirror_cpu_egress_set)(struct vtss_state_s *vtss_state);
-    vtss_rc (* eps_port_set)(struct vtss_state_s *vtss_state,
-                             const vtss_port_no_t port_no);
-    vtss_rc (* flood_conf_set)(struct vtss_state_s *vtss_state);
-#if defined(VTSS_FEATURE_IPV4_MC_SIP)
-    vtss_rc (* ipv4_mc_add)(struct vtss_state_s *vtss_state,
-                            vtss_vid_t vid, vtss_ip_t sip, vtss_ip_t dip,
-                            const BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* ipv4_mc_del)(struct vtss_state_s *vtss_state,
-                            vtss_vid_t vid, vtss_ip_t sip, vtss_ip_t dip);
-#endif /* VTSS_FEATURE_IPV4_MC_SIP */
-#if defined(VTSS_FEATURE_IPV6_MC_SIP)
-    vtss_rc (* ipv6_mc_add)(struct vtss_state_s *vtss_state,
-                            vtss_vid_t vid, vtss_ipv6_t sip, vtss_ipv6_t dip,
-                            const BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* ipv6_mc_del)(struct vtss_state_s *vtss_state,
-                            vtss_vid_t vid, vtss_ipv6_t sip, vtss_ipv6_t dip);
-#endif /* VTSS_FEATURE_IPV6_MC_SIP */
-#if defined(VTSS_FEATURE_IPV4_MC_SIP) || defined(VTSS_FEATURE_IPV6_MC_SIP)
-    vtss_rc (* ip_mc_update)(struct vtss_state_s *vtss_state,
-                             vtss_ipmc_data_t *ipmc, vtss_ipmc_cmd_t cmd);
-#endif /* VTSS_FEATURE_IPV4_MC_SIP || VTSS_FEATURE_IPV6_MC_SIP */
-    vtss_rc (* src_table_write)(struct vtss_state_s *vtss_state,
-                                vtss_port_no_t port_no, BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* pgid_table_write)(struct vtss_state_s *vtss_state,
-                                 u32 pgid, BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* aggr_table_write)(struct vtss_state_s *vtss_state,
-                                 u32 ac, BOOL member[VTSS_PORT_ARRAY_SIZE]);
-    vtss_rc (* pmap_table_write)(struct vtss_state_s *vtss_state,
-                                 vtss_port_no_t port_no, vtss_port_no_t l_port_no);
-    vtss_rc (*sflow_port_conf_set)(struct vtss_state_s *vtss_state,
-                                   vtss_port_no_t port_no, const vtss_sflow_port_conf_t *const conf);
-    vtss_rc (*sflow_sampling_rate_convert)(struct vtss_state_s *const state, const BOOL power2, const u32 rate_in, u32 *const rate_out);
+    vtss_chip_counter_t rx_local;
+    vtss_chip_counter_t rx_untagged;
+    vtss_chip_counter_t rx_tagged;
+    vtss_chip_counter_t rx_wrong_lan;
+    vtss_chip_counter_t rx_own;
+    vtss_chip_counter_t tx_local;
+    vtss_chip_counter_t tx_untagged;
+    vtss_chip_counter_t tx_tagged;
+    vtss_chip_counter_t tx_dupl_zero;
+    vtss_chip_counter_t tx_dupl_one;
+    vtss_chip_counter_t tx_dupl_multi;
+} vtss_rb_port_cnt_t;
 
-#if defined(VTSS_FEATURE_VCAP)
-    vtss_rc (* vcl_port_conf_set)(struct vtss_state_s *vtss_state,
-                                  const vtss_port_no_t port_no);
-    vtss_rc (* vce_add)(struct vtss_state_s *vtss_state,
-                        const vtss_vce_id_t  vce_id,
-                        const vtss_vce_t     *const vce);
-    vtss_rc (* vce_del)(struct vtss_state_s *vtss_state,
-                        const vtss_vce_id_t  vce_id);
-    vtss_rc (* vlan_trans_group_add) (struct vtss_state_s *vtss_state,
-                                      const vtss_vlan_trans_grp2vlan_conf_t *conf);
-    vtss_rc (* vlan_trans_group_del) (struct vtss_state_s *vtss_state,
-                                      const vtss_vlan_trans_grp2vlan_conf_t *conf);
-    vtss_rc (* vlan_trans_group_get) (struct vtss_state_s *vtss_state,
-                                      vtss_vlan_trans_grp2vlan_conf_t *conf, BOOL next);
-    vtss_rc (* vlan_trans_port_conf_set) (struct vtss_state_s *vtss_state,
-                                          const vtss_vlan_trans_port2grp_conf_t *conf);
-    vtss_rc (* vlan_trans_port_conf_get) (struct vtss_state_s *vtss_state,
-                                          vtss_vlan_trans_port2grp_conf_t *conf, BOOL next);
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_LAN966X)
-    vtss_rc (* vcap_port_conf_set)(struct vtss_state_s *vtss_state,
-                                   const vtss_port_no_t port_no);
+typedef struct {
+    vtss_rb_port_cnt_t port_a;
+    vtss_rb_port_cnt_t port_b;
+    vtss_rb_port_cnt_t port_c;
+} vtss_rb_cnt_t;
 #endif
+
+// CIL functions
+vtss_rc vtss_cil_l2_mac_table_add(struct vtss_state_s *vtss_state,
+                                  const vtss_mac_table_entry_t *const entry, u32 pgid);
+vtss_rc vtss_cil_l2_mac_table_del(struct vtss_state_s *vtss_state,
+                                  const vtss_vid_mac_t *const vid_mac);
+vtss_rc vtss_cil_l2_mac_table_get(struct vtss_state_s *vtss_state,
+                                  vtss_mac_table_entry_t *const entry, u32 *pgid);
+vtss_rc vtss_cil_l2_mac_table_get_next(struct vtss_state_s *vtss_state,
+                                       vtss_mac_table_entry_t *const entry, u32 *pgid);
+vtss_rc vtss_cil_l2_mac_table_age_time_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_mac_table_age(struct vtss_state_s *vtss_state,
+                                  BOOL             pgid_age,
+                                  u32              pgid,
+                                  BOOL             vid_age,
+                                  const vtss_vid_t vid);
+vtss_rc vtss_cil_l2_mac_table_status_get(struct vtss_state_s *vtss_state,
+                                         vtss_mac_table_status_t *const status);
+#if defined(VTSS_FEATURE_MAC_INDEX_TABLE)
+vtss_rc vtss_cil_l2_mac_index_update(struct vtss_state_s *vtss_state);
+#endif
+vtss_rc vtss_cil_l2_learn_port_mode_set(struct vtss_state_s *vtss_state,
+                                        const vtss_port_no_t port_no);
+vtss_rc vtss_cil_l2_learn_state_set(struct vtss_state_s *vtss_state,
+                                    const BOOL member[VTSS_PORT_ARRAY_SIZE]);
+#if defined(VTSS_FEATURE_L2_MSTP)
+vtss_rc vtss_cil_l2_mstp_state_set(struct vtss_state_s *vtss_state,
+                                   const vtss_port_no_t port_no,
+                                   const vtss_msti_t    msti);
+#endif
+vtss_rc vtss_cil_l2_vlan_conf_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_vlan_port_conf_update(struct vtss_state_s *vtss_state,
+                                          vtss_port_no_t port_no, vtss_vlan_port_conf_t *conf);
+vtss_rc vtss_cil_l2_vlan_mask_update(struct vtss_state_s *vtss_state,
+                                     vtss_vid_t vid, BOOL member[VTSS_PORT_ARRAY_SIZE]);
+vtss_rc vtss_cil_l2_isolated_port_members_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_aggr_mode_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_mirror_conf_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_flood_conf_set(struct vtss_state_s *vtss_state);
+vtss_rc vtss_cil_l2_src_table_write(struct vtss_state_s *vtss_state,
+                                    vtss_port_no_t port_no, BOOL member[VTSS_PORT_ARRAY_SIZE]);
+vtss_rc vtss_cil_l2_pgid_table_write(struct vtss_state_s *vtss_state,
+                                     u32 pgid, BOOL member[VTSS_PORT_ARRAY_SIZE]);
+vtss_rc vtss_cil_l2_aggr_table_write(struct vtss_state_s *vtss_state,
+                                     u32 ac, BOOL member[VTSS_PORT_ARRAY_SIZE]);
+vtss_rc vtss_cil_l2_pmap_table_write(struct vtss_state_s *vtss_state,
+                                     vtss_port_no_t port_no, vtss_port_no_t l_port_no);
+#if defined(VTSS_FEATURE_IPV4_MC_SIP) || defined(VTSS_FEATURE_IPV6_MC_SIP)
+vtss_rc vtss_cil_l2_ip_mc_update(struct vtss_state_s *vtss_state,
+                                 vtss_ipmc_data_t *ipmc, vtss_ipmc_cmd_t cmd);
+#endif /* VTSS_FEATURE_IPV4_MC_SIP || VTSS_FEATURE_IPV6_MC_SIP */
+vtss_rc vtss_cil_l2_sflow_port_conf_set(struct vtss_state_s *vtss_state,
+                                        vtss_port_no_t port_no, const vtss_sflow_port_conf_t *const conf);
+vtss_rc vtss_cil_l2_sflow_sampling_rate_convert(struct vtss_state_s *const state,
+                                                const BOOL power2, const u32 rate_in, u32 *const rate_out);
+#if defined(VTSS_FEATURE_VCAP)
+vtss_rc vtss_cil_l2_vcl_port_conf_set(struct vtss_state_s *vtss_state,
+                                      const vtss_port_no_t port_no);
 #endif // VTSS_FEATURE_VCAP
 #if defined(VTSS_FEATURE_VLAN_COUNTERS)
-    vtss_rc (* vlan_counters_get)(struct vtss_state_s *vtss_state,
-                                  const vtss_vid_t          vid,
-                                  vtss_vlan_counters_t      *const counters);
-    vtss_rc (* vlan_counters_clear)(struct vtss_state_s *vtss_state,
-                                    const vtss_vid_t        vid);
+vtss_rc vtss_cil_l2_vlan_counters_get(struct vtss_state_s *vtss_state,
+                                      const vtss_vid_t          vid,
+                                      vtss_vlan_counters_t      *const counters);
+vtss_rc vtss_cil_l2_vlan_counters_clear(struct vtss_state_s *vtss_state,
+                                        const vtss_vid_t        vid);
 #endif /* VTSS_FEATURE_VLAN_COUNTERS */
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_LAN966X)
+vtss_rc vtss_cil_l2_vcap_port_conf_set(struct vtss_state_s *vtss_state,
+                                       const vtss_port_no_t port_no);
+#endif
 #if defined(VTSS_FEATURE_XFLOW)
-    vtss_rc (* iflow_conf_set)(struct vtss_state_s *vtss_state,
-                               const vtss_iflow_id_t   id);
+vtss_rc vtss_cil_l2_iflow_conf_set(struct vtss_state_s *vtss_state,
+                                   const vtss_iflow_id_t   id);
 #endif
 #if defined(VTSS_FEATURE_XSTAT)
-    vtss_rc (* icnt_get)(struct vtss_state_s *vtss_state,
-                         u16 idx, vtss_ingress_counters_t *counters);
-    vtss_rc (* ecnt_get)(struct vtss_state_s *vtss_state,
-                         u16 idx, vtss_egress_counters_t *counters);
+vtss_rc vtss_cil_l2_icnt_get(struct vtss_state_s *vtss_state,
+                             u16 idx, vtss_ingress_counters_t *counters);
+vtss_rc vtss_cil_l2_ecnt_get(struct vtss_state_s *vtss_state,
+                             u16 idx, vtss_egress_counters_t *counters);
 #endif
 #if defined(VTSS_EVC_STAT_CNT)
-    /* Functions needed for alloc/free of policers/statistics */
-    vtss_rc (* policer_update)(struct vtss_state_s *vtss_state,
-                               const u16 idx);
-    vtss_rc (* counters_update)(struct vtss_state_s *vtss_state,
-                                vtss_stat_idx_t *sidx,
-                                BOOL clear);
-    vtss_rc (* isdx_update)(struct vtss_state_s *vtss_state,
-                            vtss_sdx_entry_t *sdx);
+/* Functions needed for alloc/free of policers/statistics */
+vtss_rc vtss_cil_l2_policer_update(struct vtss_state_s *vtss_state,
+                                   const u16 idx);
+vtss_rc vtss_cil_l2_counters_update(struct vtss_state_s *vtss_state,
+                                    vtss_stat_idx_t *sidx,
+                                    BOOL clear);
+vtss_rc vtss_cil_l2_isdx_update(struct vtss_state_s *vtss_state,
+                                vtss_sdx_entry_t *sdx);
 #if defined(VTSS_FEATURE_PSFP)
-    vtss_rc (* policer_status_get)(struct vtss_state_s *vtss_state,
-                                   const u16 idx,
-                                   vtss_dlb_policer_status_t *const status);
+vtss_rc vtss_cil_l2_policer_status_get(struct vtss_state_s *vtss_state,
+                                       const u16 idx,
+                                       vtss_dlb_policer_status_t *const status);
 #endif /* VTSS_FEATURE_PSFP */
-#endif
+#endif // VTSS_EVC_STAT_CNT
 #if defined(VTSS_FEATURE_FRER)
-    vtss_rc (* cstream_conf_set)(struct vtss_state_s *vtss_state,
-                                 const vtss_frer_cstream_id_t id);
-    vtss_rc (* mstream_conf_set)(struct vtss_state_s *vtss_state,
-                                 const u16 idx);
-    vtss_rc (* cstream_cnt_get)(struct vtss_state_s *vtss_state,
-                                const vtss_frer_cstream_id_t id,
-                                vtss_frer_counters_t *counters);
-    vtss_rc (* mstream_cnt_get)(struct vtss_state_s *vtss_state,
-                                const u16 idx,
-                                vtss_frer_counters_t *counters);
+vtss_rc vtss_cil_l2_cstream_conf_set(struct vtss_state_s *vtss_state,
+                                     const vtss_frer_cstream_id_t id);
+vtss_rc vtss_cil_l2_mstream_conf_set(struct vtss_state_s *vtss_state,
+                                     const u16 idx);
+vtss_rc vtss_cil_l2_cstream_cnt_get(struct vtss_state_s *vtss_state,
+                                    const vtss_frer_cstream_id_t id,
+                                    vtss_frer_counters_t *counters);
+vtss_rc vtss_cil_l2_mstream_cnt_get(struct vtss_state_s *vtss_state,
+                                    const u16 idx,
+                                    vtss_frer_counters_t *counters);
 #endif
 #if defined(VTSS_FEATURE_PSFP)
-    vtss_rc (* psfp_gate_conf_set)(struct vtss_state_s *vtss_state,
-                                   const vtss_psfp_gate_id_t id);
-    vtss_rc (* psfp_gate_status_get)(struct vtss_state_s *vtss_state,
-                                     const vtss_psfp_gate_id_t id,
-                                     vtss_psfp_gate_status_t *const status);
-    vtss_rc (* psfp_filter_conf_set)(struct vtss_state_s *vtss_state,
-                                     const vtss_psfp_filter_id_t id);
-    vtss_rc (* psfp_filter_status_get)(struct vtss_state_s *vtss_state,
-                                       const vtss_psfp_filter_id_t id,
-                                       vtss_psfp_filter_status_t *const status);
+vtss_rc vtss_cil_l2_psfp_gate_conf_set(struct vtss_state_s *vtss_state,
+                                       const vtss_psfp_gate_id_t id);
+vtss_rc vtss_cil_l2_psfp_gate_status_get(struct vtss_state_s *vtss_state,
+                                         const vtss_psfp_gate_id_t id,
+                                         vtss_psfp_gate_status_t *const status);
+vtss_rc vtss_cil_l2_psfp_filter_conf_set(struct vtss_state_s *vtss_state,
+                                         const vtss_psfp_filter_id_t id);
+vtss_rc vtss_cil_l2_psfp_filter_status_get(struct vtss_state_s *vtss_state,
+                                           const vtss_psfp_filter_id_t id,
+                                           vtss_psfp_filter_status_t *const status);
 #endif
 #if defined(VTSS_FEATURE_RCL)
-    vtss_rc (* rcl_vid_conf_set)(struct vtss_state_s *vtss_state, const u8 idx);
+vtss_rc vtss_cil_l2_rcl_vid_conf_set(struct vtss_state_s *vtss_state, const u8 idx);
+#endif
+#if defined(VTSS_FEATURE_REDBOX)
+vtss_rc vtss_cil_l2_rb_cap_get(struct vtss_state_s *vtss_state,
+                               const vtss_rb_id_t rb_id,
+                               vtss_rb_cap_t *const cap);
+vtss_rc vtss_cil_l2_rb_conf_set(struct vtss_state_s *vtss_state,
+                                const vtss_rb_id_t rb_id);
+vtss_rc vtss_cil_l2_rb_counters_update(struct vtss_state_s *vtss_state,
+                                       const vtss_rb_id_t rb_id,
+                                       BOOL clear);
+vtss_rc vtss_cil_l2_rb_node_add(struct vtss_state_s *vtss_state,
+                                const vtss_rb_id_t rb_id,
+                                const vtss_mac_t *const mac,
+                                const vtss_rb_node_conf_t *const conf);
+vtss_rc vtss_cil_l2_rb_node_del(struct vtss_state_s *vtss_state,
+                                const vtss_rb_id_t rb_id,
+                                const vtss_mac_t *const mac);
+vtss_rc vtss_cil_l2_rb_node_table_clear(struct vtss_state_s *vtss_state,
+                                        const vtss_rb_id_t rb_id,
+                                        const vtss_rb_clear_t clear);
+vtss_rc vtss_cil_l2_rb_node_get(struct vtss_state_s *vtss_state,
+                                const vtss_rb_id_t rb_id,
+                                const vtss_mac_t   *const mac,
+                                vtss_rb_node_t     *const entry);
+vtss_rc vtss_cil_l2_rb_node_get_next(struct vtss_state_s *vtss_state,
+                                     const vtss_rb_id_t rb_id,
+                                     const vtss_mac_t   *const mac,
+                                     vtss_rb_node_t     *const entry);
+vtss_rc vtss_cil_l2_rb_node_id_get_next(struct vtss_state_s *vtss_state,
+                                        const vtss_rb_id_t rb_id,
+                                        const vtss_rb_node_id_t id,
+                                        vtss_rb_node_t     *const entry);
+vtss_rc vtss_cil_l2_rb_proxy_node_add(struct vtss_state_s *vtss_state,
+                                      const vtss_rb_id_t rb_id,
+                                      const vtss_mac_t *const mac,
+                                      const vtss_rb_proxy_node_conf_t *const conf);
+vtss_rc vtss_cil_l2_rb_proxy_node_del(struct vtss_state_s *vtss_state,
+                                      const vtss_rb_id_t rb_id,
+                                      const vtss_mac_t *const mac);
+vtss_rc vtss_cil_l2_rb_proxy_node_table_clear(struct vtss_state_s *vtss_state,
+                                              const vtss_rb_id_t rb_id,
+                                              const vtss_rb_clear_t clear);
+vtss_rc vtss_cil_l2_rb_proxy_node_get(struct vtss_state_s *vtss_state,
+                                      const vtss_rb_id_t rb_id,
+                                      const vtss_mac_t *const mac,
+                                      vtss_rb_proxy_node_t *const entry);
+vtss_rc vtss_cil_l2_rb_proxy_node_get_next(struct vtss_state_s *vtss_state,
+                                           const vtss_rb_id_t rb_id,
+                                           const vtss_mac_t *const mac,
+                                           vtss_rb_proxy_node_t *const entry);
+vtss_rc vtss_cil_l2_rb_proxy_node_id_get_next(struct vtss_state_s *vtss_state,
+                                              const vtss_rb_id_t rb_id,
+                                              const vtss_rb_proxy_node_id_t id,
+                                              vtss_rb_proxy_node_t *const entry);
 #endif
 
-    /* Configuration/state */
+typedef struct {
     /* Aggregated forwarding information */
+    BOOL                          pmap_done;
     BOOL                          learn[VTSS_PORT_ARRAY_SIZE];
     BOOL                          rx_forward[VTSS_PORT_ARRAY_SIZE];
     BOOL                          tx_forward[VTSS_PORT_ARRAY_SIZE];
@@ -747,7 +776,6 @@ typedef struct {
     vtss_mac_table_age_time_t     mac_age_time;
     vtss_mac_table_status_t       mac_status;
     u32                           mac_index_next;  /* Index for MAC table get next */
-    u32                           mac_table_max;   /* Maximum number of entries in mac_table */
     u32                           mac_table_count; /* Actual number of entries in mac_table */
     vtss_mac_entry_t              *mac_list_used;  /* Sorted list of entries */
     vtss_mac_entry_t              *mac_list_free;  /* Free list */
@@ -771,7 +799,7 @@ typedef struct {
 
     vtss_sflow_port_conf_t        sflow_conf[VTSS_PORT_ARRAY_SIZE];
     u32                           sflow_max_power_of_two;
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     u32                           sflow_ena_cnt; /* Count - the number of ports on which sFlow is enabled */
 #endif
 
@@ -820,6 +848,12 @@ typedef struct {
 #endif
 #if defined(VTSS_FEATURE_RCL)
     vtss_rcl_vid_entry_t rcl_vid[VTSS_RCL_VID_CNT];
+#endif
+#if defined(VTSS_FEATURE_REDBOX)
+    vtss_rb_conf_t rb_conf[VTSS_REDBOX_CNT];
+    vtss_rb_conf_t rb_conf_old;
+    vtss_rb_cnt_t  rb_cnt[VTSS_REDBOX_CNT];
+    u32            rb_poll_idx; // Counter polling index
 #endif
 } vtss_l2_state_t;
 
@@ -932,6 +966,7 @@ void vtss_port_mask_port(struct vtss_state_s *vtss_state,
                          vtss_port_no_t port_no,
                          vtss_port_mask_t *pmask);
 
+BOOL vtss_vlan_counters_enabled(struct vtss_state_s *vtss_state);
 #if defined(VTSS_SDX_CNT)
 vtss_sdx_entry_t *vtss_cmn_sdx_alloc(struct vtss_state_s *vtss_state, vtss_port_no_t port_no, u16 id, BOOL isdx);
 void vtss_cmn_sdx_free(struct vtss_state_s *vtss_state, vtss_sdx_entry_t *sdx, BOOL isdx);

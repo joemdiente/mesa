@@ -3,7 +3,7 @@
 
 project(meba)
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.5)
 
 include_directories(include)
 include_directories(../mesa/include)
@@ -111,6 +111,9 @@ MEBA_LIB(LIB_NAME caracal MEBA_SRC_FOLDER caracal
 MEBA_LIB(LIB_NAME jr2 MEBA_SRC_FOLDER jr2
          STATIC_DEPENDENCIES    mepa_jr2)
 
+MEBA_LIB(LIB_NAME jr2_macsec MEBA_SRC_FOLDER jr2
+         STATIC_DEPENDENCIES    mepa_jr2_macsec)
+
 MEBA_LIB(LIB_NAME jr2_bringup MEBA_SRC_FOLDER jr2
          STATIC_DEPENDENCIES    mepa_jr2_bringup)
 
@@ -125,6 +128,9 @@ MEBA_LIB(LIB_NAME ocelot_pcb121 MEBA_SRC_FOLDER ocelot_pcb121
 
 MEBA_LIB(LIB_NAME sparx5 MEBA_SRC_FOLDER sparx5
          STATIC_DEPENDENCIES    mepa_sparx5)
+
+MEBA_LIB(LIB_NAME sparx5_macsec MEBA_SRC_FOLDER sparx5
+         STATIC_DEPENDENCIES    mepa_sparx5_macsec)
 
 MEBA_LIB(LIB_NAME sparx5_bringup MEBA_SRC_FOLDER sparx5
          STATIC_DEPENDENCIES    mepa_sparx5_bringup)

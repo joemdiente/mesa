@@ -83,6 +83,7 @@ typedef struct
     mesa_packet_rx_queue_t lrn_all_queue;     // Learn-all queue
     mesa_packet_rx_queue_t l3_uc_queue CAP(L3);    // L3 routing unicast queue
     mesa_packet_rx_queue_t l3_other_queue CAP(L3); // L3 routing other frames queue
+    mesa_packet_rx_queue_t sv_queue CAP(L2_REDBOX_CNT);      // Supervision frames
 } mesa_packet_rx_queue_map_t;
 
 // CPU Rx configuration
@@ -386,30 +387,55 @@ typedef struct {
 
     // Ingress flow ID or MESA_IFLOW_ID_NONE (not used for Luton26)
     mesa_iflow_id_t iflow_id;
+
+    // RedBox: True if frame was received on port A, false if port B
+    mesa_bool_t rb_port_a;
+
+    // RedBox: True if frame was received with either an RCT or an HSR-tag,
+    // false otherwise
+    mesa_bool_t rb_tagged;
 } mesa_packet_rx_info_t;
 
 // Chip pipeline injection point.
 typedef enum {
-    MESA_PACKET_PIPELINE_PT_NONE         =  0, // None
-    MESA_PACKET_PIPELINE_PT_ANA_PORT_VOE =  2, // Analyzer port VOE MEP (up)
-    MESA_PACKET_PIPELINE_PT_ANA_CL       =  3, // Basic classification
-    MESA_PACKET_PIPELINE_PT_ANA_CLM      =  4, // Analyzer CLM (up)
-    MESA_PACKET_PIPELINE_PT_ANA_OU_VOI   =  6, // Analyzer outer VOI (MIP) (up)
-    MESA_PACKET_PIPELINE_PT_ANA_OU_SW    =  7, // Analyzer outer software MEP (up)
-    MESA_PACKET_PIPELINE_PT_ANA_OU_VOE   =  9, // Analyzer outer VOE MEP (up)
-    MESA_PACKET_PIPELINE_PT_ANA_IN_VOE   = 11, // Analyzer inner VOE MEP (up)
-    MESA_PACKET_PIPELINE_PT_ANA_IN_SW    = 13, // Analyzer inner software MEP (up)
-    MESA_PACKET_PIPELINE_PT_ANA_IN_VOI   = 14, // Analyzer inner VOI (MIP) (up)
-    MESA_PACKET_PIPELINE_PT_REW_IN_VOI   = 17, // Rewriter inner VOI (MIP) (down)
-    MESA_PACKET_PIPELINE_PT_REW_IN_SW    = 18, // Rewriter inner software MEP (down)
-    MESA_PACKET_PIPELINE_PT_REW_IN_VOE   = 19, // Rewriter inner VOE MEP (down)
-    MESA_PACKET_PIPELINE_PT_REW_OU_VOE   = 20, // Rewriter outer VOE MEP (down)
-    MESA_PACKET_PIPELINE_PT_REW_OU_SW    = 21, // Rewriter outer software MEP (down)
-    MESA_PACKET_PIPELINE_PT_REW_OU_VOI   = 22, // Rewriter outer VOI (MIP) (down)
-    MESA_PACKET_PIPELINE_PT_REW_PORT_VOE = 24  // Rewriter port VOE MEP (down)
+    MESA_PACKET_PIPELINE_PT_NONE,         // None
+    MESA_PACKET_PIPELINE_PT_ANA_RB,       // Analyzer RedBOX
+    MESA_PACKET_PIPELINE_PT_ANA_VRAP,     // Analyzer port VOE MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_PORT_VOE, // Analyzer port VOE MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_CL,       // Basic classification
+    MESA_PACKET_PIPELINE_PT_ANA_CLM,      // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_IPT_PROT, // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_OU_VOI,   // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_OU_SW,    // Analyzer outer software MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_OU_PROT,  // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_OU_VOE,   // Analyzer outer VOE MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_MID_PROT, // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_IN_VOE,   // Analyzer inner VOE MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_IN_PROT,  // Analyzer CLM (up)
+    MESA_PACKET_PIPELINE_PT_ANA_IN_SW,    // Analyzer inner software MEP (up)
+    MESA_PACKET_PIPELINE_PT_ANA_IN_VOI,   // Analyzer inner VOI (MIP) (up)
+    MESA_PACKET_PIPELINE_PT_ANA_VLAN,     // Analyzer inner VOI (MIP) (up)
+    MESA_PACKET_PIPELINE_PT_ANA_DONE,     // Analyzer done
+    MESA_PACKET_PIPELINE_PT_REW_IN_VOI,   // Rewriter inner VOI (MIP) (down)
+    MESA_PACKET_PIPELINE_PT_REW_IN_SW,    // Rewriter inner software MEP (down)
+    MESA_PACKET_PIPELINE_PT_REW_IN_VOE,   // Rewriter inner VOE MEP (down)
+    MESA_PACKET_PIPELINE_PT_REW_OU_VOE,   // Rewriter outer VOE MEP (down)
+    MESA_PACKET_PIPELINE_PT_REW_OU_SW,    // Rewriter outer software MEP (down)
+    MESA_PACKET_PIPELINE_PT_REW_OU_VOI,   // Rewriter outer VOI (MIP) (down)
+    MESA_PACKET_PIPELINE_PT_REW_OU_SAT,   // Rewriter outer VOI (MIP) (down)
+    MESA_PACKET_PIPELINE_PT_REW_PORT_VOE, // Rewriter port VOE MEP (down)
+    MESA_PACKET_PIPELINE_PT_REW_VCAP      //iter port VOE MEP (down)
 } mesa_packet_pipeline_pt_t;
 
 #define MESA_ISDX_CPU_TX 1023 // ISDX used for CPU transmissions
+
+// RedBox forward selection
+typedef enum {
+    MESA_PACKET_RB_FWD_DEFAULT, // Forwarding determined by RedBox
+    MESA_PACKET_RB_FWD_A,       // Forwarding to port A only
+    MESA_PACKET_RB_FWD_B,       // Forwarding to port B only
+    MESA_PACKET_RB_FWD_BOTH     // Forwarding to port A and B
+} mesa_packet_rb_fwd_t;
 
 // Injection Properties.
 //
@@ -502,6 +528,19 @@ typedef struct {
     // Chip pipeline injection point (not used for Luton26 and Serval)
     // Specifies where a frame is injected into the chip.
     mesa_packet_pipeline_pt_t pipeline_pt;
+
+    // RedBox HSR/PRP tag disable
+    mesa_bool_t rb_tag_disable;
+
+    // RedBox HSR duplicate discard disable
+    mesa_bool_t rb_dd_disable;
+
+    // RedBox inserts ring_netid (always 0) rather than its configred NetId in
+    // HSR tag
+    mesa_bool_t rb_ring_netid_enable;
+
+    // RedBox forwarding selection
+    mesa_packet_rb_fwd_t rb_fwd;
 } mesa_packet_tx_info_t;
 
 // Decode binary extraction/Rx header.

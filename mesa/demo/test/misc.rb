@@ -307,6 +307,18 @@ test "acl-etype-counter" do
     check_counter("ace", cnt, 1)
 end
 
+test "redbox" do
+    break
+    rb_id = 0
+    cap = $ts.dut.call("mesa_rb_cap_get", rb_id)
+    conf = $ts.dut.call("mesa_rb_conf_get", rb_id)
+    conf["mode"] = "MESA_RB_MODE_HSR_SAN"
+    conf["port_a"] = 0
+    conf["port_b"] = 1
+    $ts.dut.call("mesa_rb_conf_set", rb_id, conf)
+    $ts.dut.run("mesa-cmd deb api ai redbox")
+end
+
 test "acl-frame-policer" do
     break
     idx = 0
@@ -321,5 +333,111 @@ test "acl-frame-policer" do
     conf["rate"] = 30
     $ts.dut.call("mesa_acl_policer_conf_set", pol, conf)
     $ts.pc.run("ef name f1 eth tx #{$ts.pc.p[idx]} rep 100 name f1")
+    $ts.dut.run("mesa-cmd port stati #{port + 1}")
     $ts.dut.run("mesa-cmd port stati pac")
+end
+
+test "vlan-ot" do
+    break
+    vid = 1
+    conf = $ts.dut.call("mesa_vlan_vid_conf_get", vid)
+    conf["ot"] = true
+    conf = $ts.dut.call("mesa_vlan_vid_conf_set", vid, conf)
+    $ts.dut.run("mesa-cmd deb api vlan")
+end
+
+test "mrp-enable" do
+    break
+    vce = $ts.dut.call("mesa_vce_init", "MESA_VCE_TYPE_ANY")
+    vce["id"] = 1
+    vce["key"]["port_list"] = "#{$ts.dut.p[0]}"
+    vce["action"]["mrp_enable"] = true
+    $ts.dut.call("mesa_vce_add", 0, vce)
+    vce["id"] = 2
+    vce["action"]["mrp_enable"] = false
+    $ts.dut.call("mesa_vce_add", 0, vce)
+    $ts.dut.run("mesa-cmd deb api ci vx")
+end
+
+test "ip-intf" do
+    break
+    $ts.dut.run("mesa-cmd interface ip add 1")
+    $ts.dut.run("ip addr add 1.1.1.1/24 dev vtss.vlan.1")
+    e = $ts.dut.call("mesa_mac_table_get_next", {vid: 1, mac: {addr: [0,0,0,0,0,0]}})
+    mac = e["vid_mac"]["mac"]["addr"].collect{|i| i.to_s(16)}.join(":")
+    cmd = "ef name f1 eth smac 2 arp oper 1 sha 2 spa 1.1.1.2 tpa 1.1.1.1"
+    cmd += " name f2 eth dmac 2 smac #{mac} arp oper 2 sha #{mac} tha 2 spa 1.1.1.1 tpa 1.1.1.2"
+    name = $ts.pc.p[0]
+    cmd += " tx #{name} name f1"
+    cmd += " rx #{name} name f2"
+    $ts.pc.run(cmd)
+end
+
+test "pause-cnt-25g" do
+    break
+    idx_tx = 0
+    idx_rx = 1
+    p0 = $ts.dut.p[idx_tx]
+    p1 = $ts.dut.p[idx_rx]
+    p = $ts.dut.looped_port_list_10g
+    lp0 = p[0]
+    lp1 = p[1]
+    if (false)
+        # 1G operation
+        $ts.dut.run("mesa-cmd port mode #{lp0 + 1},#{lp1 + 1} 1000fdx")
+        sleep(3)
+    end
+    $ts.dut.run("mesa-cmd port mode #{p0 + 1},#{p1 + 1},#{lp0 + 1},#{lp1 + 1}")
+    $ts.dut.call("mesa_vlan_port_members_set", 1, "#{p0},#{p1},#{lp0},#{lp1}")
+    $ts.dut.call("mesa_pvlan_port_members_set", 0, "#{p0},#{lp0}")
+    $ts.dut.call("mesa_pvlan_port_members_set", 1, "#{p1},#{lp1}")
+    if (false)
+        # Normal flow control
+        $ts.dut.run("mesa-cmd port flow control #{lp0 + 1},#{lp1 + 1} enable")
+    else
+        # Priority flow control
+        [lp0,lp1].each do |port|
+            conf = $ts.dut.call("mesa_port_conf_get", port)
+            for i in 0..7
+                conf["flow_control"]["pfc"][i] = true;
+            end
+            $ts.dut.call("mesa_port_conf_set", port, conf)
+        end
+    end
+    conf = $ts.dut.call("mesa_qos_port_conf_get", p1)
+    conf["shaper"]["level"] = 5
+    conf["shaper"]["rate"] = 100
+    conf["shaper"]["mode"] = "MESA_SHAPER_MODE_FRAME"
+    $ts.dut.call("mesa_qos_port_conf_set", p1, conf)
+    # Send frames to trigger flow control
+    cmd = "sudo ef name f1 eth "
+    cmd += "tx #{$ts.pc.p[idx_tx]} rep 1000 name f1"
+    $ts.pc.run(cmd)
+    $ts.dut.run("mesa-cmd port stati pa")
+    $ts.dut.run("mesa-cmd debug api ai counters #{lp0 + 1},#{lp1 + 1}")
+end
+
+test "qos-map" do
+    break
+    map = $ts.dut.call("mesa_qos_egress_map_init", "MESA_QOS_EGRESS_MAP_KEY_DSCP_DPL")
+    map["id"] = 3
+    $ts.dut.call("mesa_qos_egress_map_add", map)
+end
+
+test "policer-counter" do
+    break
+    idx = 0
+    port = $ts.dut.p[idx]
+    cnt = $ts.dut.call("mesa_capability", "MESA_CAP_QOS_PORT_POLICER_CNT")
+    conf = $ts.dut.call("mesa_qos_port_policer_conf_get", port, cnt)
+    pol = conf[0]
+    pol["frame_rate"] = false
+    pol["policer"]["level"] = 0
+    pol["policer"]["rate"] = 1000000
+    $ts.dut.call("mesa_qos_port_policer_conf_set", port, cnt, conf)
+    cmd = "sudo ef name f1 eth "
+    cmd += "tx #{$ts.pc.p[idx]} rep 1000 name f1"
+    $ts.pc.run(cmd)
+    $ts.dut.run("mesa-cmd port stati #{port + 1}")
+    $ts.dut.run("mesa-cmd port stati pa")
 end

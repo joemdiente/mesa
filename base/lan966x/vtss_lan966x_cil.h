@@ -164,6 +164,7 @@ static inline u32 __ioreg(const char *file, int line,
 #define VTSS_CHIP_PORT_CPU   VTSS_CHIP_PORTS /* Next port is CPU port */
 #define VTSS_CHIP_PORT_CPU_0 (VTSS_CHIP_PORT_CPU + 0) /* Aka. CPU Port 8 */
 #define VTSS_CHIP_PORT_CPU_1 (VTSS_CHIP_PORT_CPU + 1) /* Aka. CPU Port 9 */
+#define VTSS_CHIP_PORTS_ALL  (VTSS_CHIP_PORT_CPU + 2) /* Total number of ports */
 #define VTSS_CHIP_PORT_MASK  VTSS_BITMASK(VTSS_CHIP_PORTS) /* Chip port mask */
 
 #define LAN966X_ACS          16  /* Number of aggregation masks */
@@ -192,8 +193,6 @@ static inline u32 __ioreg(const char *file, int line,
 #define LAN966X_POLICER_DLB   97  // 97-343: DLB policers (247)
 #define LAN966X_POLICER_DISC  344 // 255   : Discard policer
 #define LAN966X_POLICER_CNT   345 // Total number of policers
-
-#define LAN966X_PRIOS        8   /* Number of priorities */
 
 /* LAN966X has 4 PTP PIN connected to GPIO that can be used for different purposes, the defines below defines the
  * default usage of the 4 pins.
@@ -235,6 +234,9 @@ vtss_rc vtss_lan966x_port_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd);
 vtss_rc vtss_lan966x_port_debug_print(vtss_state_t *vtss_state,
                                       const vtss_debug_printf_t pr,
                                       const vtss_debug_info_t   *const info);
+vtss_rc vtss_lan966x_port_debug_qres(vtss_state_t *vtss_state,
+                                     const vtss_debug_printf_t pr,
+                                     BOOL res_stat_cur);
 #endif
 vtss_rc vtss_lan966x_port_max_tags_set(vtss_state_t *vtss_state, vtss_port_no_t port_no);
 vtss_rc vtss_lan966x_wm_update(vtss_state_t *vtss_state);

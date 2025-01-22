@@ -17,7 +17,10 @@ typedef enum {
     BOARD_TYPE_SPARX5_PCB125 = 125,  /* FA Modular board */
     BOARD_TYPE_SPARX5_PCB134 = 134,  /* 20xSFP + NPI */
     BOARD_TYPE_SPARX5_PCB135 = 135,  /* 48x1G + 4x10G + 4x25G + NPI */
+    BOARD_TYPE_SUNRISE = VTSS_BOARD_LAN9668_SUNRISE_REF,
     BOARD_TYPE_SPARX5_EMULATION = 999,
+    BOARD_TYPE_LAGUNA_PCB8398 = 0x8398, /* Laguna 24x1G + 4x10G port */
+    BOARD_TYPE_LAGUNA_PCB8422 = 0x8422, /* Laguna 10x10G + NPI */
 } board_type_t;
 
 /* SparX-5 Ref board port configurations  */
@@ -49,6 +52,9 @@ typedef struct meba_board_state {
     mesa_bool_t           beaglebone;
     mesa_bool_t           ls1046;
     mesa_bool_t           gpy241_present;
+    mesa_bool_t           viper_present;
+    mesa_bool_t           malibu_present;
+    mesa_bool_t           tesla_present;
     mesa_bool_t           gpy241_usxgmii_mode;
     uint16_t              gpy241_leds[4];
     uint32_t              port_cnt;
@@ -56,5 +62,9 @@ typedef struct meba_board_state {
     fa_port_info_t        *port;
     const board_func_t    *func;
     mepa_device_t        *phy_devices[MAX_PORTS];
+    mesa_port_status_t    status[MAX_PORTS];
 } meba_board_state_t;
 
+#define PORT_2_BOARD_PORT(board, p) (board->port[p].board_port)
+#define PORT_2_SGPIO_PORT(board, p) (board->port[p].sgpio_port)
+#define PORT_2_SGPIO_BIT(board, p) (board->port[p].sgpio_bit)

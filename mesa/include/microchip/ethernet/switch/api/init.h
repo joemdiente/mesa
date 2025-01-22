@@ -57,6 +57,18 @@ typedef enum {
     MESA_TARGET_7558TSN       = 0x47558, // SparX-5-200i Industrial Switch
     MESA_TARGET_LAN9662       = 0x9662,  // LAN9662 switch
     MESA_TARGET_LAN9668       = 0x9668,  // LAN9668 switch
+    MESA_TARGET_LAN9694       = 0x9694,  // Laguna-40:      +40G Ethernet switch */
+    MESA_TARGET_LAN9691VAO    = 0x9691,  // Laguna-40-VAO:  +40G Automotive TSN Ethernet switch */
+    MESA_TARGET_LAN9694TSN    = 0x9695,  // Laguna-40-TSN:  +40G TSN Ethernet switch */
+    MESA_TARGET_LAN9694RED    = 0x969A,  // Laguna-40-RED:  +40G TSN Ethernet switch with PRP/HSR */
+    MESA_TARGET_LAN9696       = 0x9696,  // Laguna-60:      +60G Ethernet switch */
+    MESA_TARGET_LAN9692VAO    = 0x9692,  // Laguna-65-VAO:  +65G Automotive TSN Ethernet switch */
+    MESA_TARGET_LAN9696TSN    = 0x9697,  // Laguna-60-TSN:  +60G TSN Ethernet switch */
+    MESA_TARGET_LAN9696RED    = 0x969B,  // Laguna-60-RED:  +60G TSN Ethernet switch with PRP/HSR */
+    MESA_TARGET_LAN9698       = 0x9698,  // Laguna-100:     +80G Ethernet switch */
+    MESA_TARGET_LAN9693VAO    = 0x9693,  // Laguna-100-VAO: +80G Automotive TSN Ethernet switch */
+    MESA_TARGET_LAN9698TSN    = 0x9699,  // Laguna-100-TSN: +80G TSN Ethernet switch */
+    MESA_TARGET_LAN9698RED    = 0x969C,  // Laguna-100-RED: +80G TSN Ethernet switch with PRP/HSR */
 } mesa_target_type_t;
 
 // Create structure
@@ -288,13 +300,21 @@ typedef struct {
 typedef enum {
     MESA_CORE_CLOCK_DEFAULT,  // Defaults to the highest supported frequency
     MESA_CORE_CLOCK_250MHZ,   // 250MHZ core clock frequency
+    MESA_CORE_CLOCK_328MHZ,   // 328.125MHZ (laguna) */
     MESA_CORE_CLOCK_500MHZ,   // 500MHZ core clock frequency
     MESA_CORE_CLOCK_625MHZ,   // 625MHZ core clock frequency
 } mesa_core_clock_freq_t CAP(INIT_CORE_CLOCK);
 
+typedef enum {
+    MESA_CORE_REF_CLK_DEFAULT, // Use strapping pin
+    MESA_CORE_REF_CLK_25MHZ,   // 25Mhz reference clock
+    MESA_CORE_REF_CLK_39MHZ,   // 39.0625Mhz reference clock
+} mesa_core_ref_clk_t CAP(INIT_CORE_CLOCK);
+
 // Core clock configuration
 typedef struct {
     mesa_core_clock_freq_t freq;   // The frequency of the core clock (LC-PLL)
+    mesa_core_ref_clk_t ref_freq;  // The frequency of the ref clock to core clock
 } mesa_core_clock_conf_t CAP(INIT_CORE_CLOCK);
 
 // Initialization configuration.

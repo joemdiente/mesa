@@ -1,40 +1,102 @@
 // Copyright (c) 2004-2020 Microchip Technology Inc. and its subsidiaries.
 // SPDX-License-Identifier: MIT
-
+#if !defined MEPA_LAN8814_LIGHT
 #include <microchip/ethernet/phy/api.h>
 #include <mepa_driver.h>
 #include <mepa_ts_driver.h>
-
 #include "../../common/include/lan8814_registers.h"
 #include "lan8814_ts_registers.h"
 #include "lan8814_private.h"
 #include <string.h>
+#include <stdio.h>
+
+#define CLK_PERIOD_250_MHZ  4 // 4 nano seconds clock period.
+#define CLK_PERIOD_200_MHZ  5 // 5 nano seconds clock period.
 
 static  uint16_t indy_ing_latencies[MEPA_TS_CLOCK_FREQ_MAX - 1][3] = {
-    {  000, 0000, 00000 }, // 1000,100,10 speeds
-    {  000, 0000, 00000 },
-    {  438, 567, 8380 },
-    {  436, 573, 8377 }, // 436 573
+                                 // 1000,  100,    10 speeds
+    [MEPA_TS_CLOCK_FREQ_25M] =    {  415, 1447, 8377 }, // Internal clock is 250 MHz
+    [MEPA_TS_CLOCK_FREQ_125M] =   {  000, 0000, 00000 },
+    [MEPA_TS_CLOCK_FREQ_15625M] = {  000, 0000, 00000 },
+    [MEPA_TS_CLOCK_FREQ_200M] =   {  417, 1441, 8380 },
+    [MEPA_TS_CLOCK_FREQ_250M] =   {  415, 627, 8377 }, // 415 1447
 };
 
 static  uint16_t indy_egr_latencies[MEPA_TS_CLOCK_FREQ_MAX - 1][3] = {
-    {  000, 0000, 00000 }, // 1000,100,100 speeds
-    {  000, 0000, 00000 },
-    {  208,  1266, 11355 },
-    {  208,  1262, 11353 }, // 208 1262
+                                 // 1000,  100,    10 speeds
+    [MEPA_TS_CLOCK_FREQ_25M] =    {  186,  296, 11353 }, // Internal clock is 250 MHz
+    [MEPA_TS_CLOCK_FREQ_125M] =   {  000, 0000, 00000 },
+    [MEPA_TS_CLOCK_FREQ_15625M] = {  000, 0000, 00000 },
+    [MEPA_TS_CLOCK_FREQ_200M] =   {  189,  300, 11355 },
+    [MEPA_TS_CLOCK_FREQ_250M] =   {  186,  296, 11353 }, // 186 296
 };
 
 static uint16_t indy_twostep_egr_lat_adj[MEPA_TS_CLOCK_FREQ_MAX][4] = {
   //     10M,100M, 1G
-    {0,    0,   0,  0},
-    {0,    0,   0,  0},
-    {0,11197,1125,125}, //200Mhz
-    {0,11198,1120,120}, //250Mhz : 100mbps cannot be compensated due to defailt value less than compensated value.
-    {0,    0,   0,  0},
+    [MEPA_TS_CLOCK_FREQ_25M] =    {0, 11198, 1120, 115}, // Internal clock is 250 MHz
+    [MEPA_TS_CLOCK_FREQ_125M] =   {0,     0,    0,   0},
+    [MEPA_TS_CLOCK_FREQ_15625M] = {0,     0,    0,   0},
+    [MEPA_TS_CLOCK_FREQ_200M] =   {0, 11197, 1125, 120}, //200Mhz
+    [MEPA_TS_CLOCK_FREQ_250M] =   {0, 11198, 1120, 115}, //250Mhz : 100mbps cannot be compensated due to defailt value less than compensated value.
+    [MEPA_TS_CLOCK_FREQ_500M] =   {0,     0,    0,   0},
 };
+
+static uint8_t def_mac[] = {0x01, 0x1B, 0x19, 0x00, 0x00, 0x00};
 
 static mepa_rc indy_ltc_target_seconds(mepa_device_t *dev, uint32_t sec);
 
+static void get_default_ts_eth_class(mepa_ts_classifier_eth_t *const conf)
+{
+    conf->mac_match_mode = MEPA_TS_ETH_ADDR_MATCH_ANY;
+    conf->mac_match_select = MEPA_TS_ETH_MATCH_DEST_ADDR;
+    memcpy(conf->mac_addr, def_mac, sizeof(conf->mac_addr));
+    conf->vlan_check = FALSE;
+    conf->vlan_conf.pbb_en = FALSE;
+    conf->vlan_conf.tpid = 0x88A8;
+    conf->vlan_conf.etype = 0x88f7;
+    conf->vlan_conf.num_tag = 0;
+}
+static void get_default_ts_ip_class(mepa_ts_classifier_ip_t *const conf)
+{
+    conf->ip_ver = MEPA_TS_IP_VER_4;
+    conf->ip_match_mode = MEPA_TS_IP_MATCH_DEST;
+    conf->ip_addr.ipv4.addr = conf->ip_addr.ipv4.mask = 0;
+    memset(conf->ip_addr.ipv6.addr, 0, sizeof(conf->ip_addr.ipv6.addr));
+    memset(conf->ip_addr.ipv6.mask, 0, sizeof(conf->ip_addr.ipv6.mask));
+    conf->udp_sport_en = FALSE;
+    conf->udp_dport_en = TRUE;
+    conf->udp_sport = 0;
+    conf->udp_dport = 319;
+}
+static void get_default_ts_ptp_class(mepa_ts_classifier_ptp_t *const conf)
+{
+    conf->version.upper = 2;
+    conf->version.lower = 2;
+    conf->minor_version.upper = 1;
+    conf->minor_version.lower = 0;
+    //domain
+    conf->domain.mode = MEPA_TS_MATCH_MODE_VALUE;
+    conf->domain.match.value.val = 0;
+    conf->domain.match.value.mask = 0xF;
+    //sdoid
+    conf->sdoid.mode = MEPA_TS_MATCH_MODE_VALUE;
+    conf->sdoid.match.value.val = 0;
+    conf->sdoid.match.value.mask = 0; //not used for 1588-2008 standard
+}
+static void get_default_ts_clock_cfg(mepa_ts_ptp_clock_conf_t *clk_conf)
+{
+    clk_conf->clk_mode = MEPA_TS_PTP_CLOCK_MODE_NONE;
+    clk_conf->delaym_type = MEPA_TS_PTP_DELAYM_E2E;
+    clk_conf->enable = FALSE;
+    get_default_ts_ptp_class(&clk_conf->ptp_class_conf);
+}
+static void get_default_ts_classifier_cfg(mepa_ts_classifier_t *const conf)
+{
+    conf->pkt_encap_type = MEPA_TS_ENCAP_NONE;
+    conf->clock_id = 0;
+    get_default_ts_eth_class(&conf->eth_class_conf);
+    get_default_ts_ip_class(&conf->ip_class_conf);
+}
 static mepa_rc indy_tsu_block_init(mepa_device_t *dev, const mepa_ts_init_conf_t *ts_init_conf)
 {
     uint16_t val = 0, clock_cfg = 0, pll_div = 0;
@@ -78,6 +140,14 @@ static mepa_rc indy_tsu_block_init(mepa_device_t *dev, const mepa_ts_init_conf_t
         return MEPA_RC_ERROR;
     }
     switch (ts_init_conf->clk_freq) {
+    case MEPA_TS_CLOCK_FREQ_25M:
+        // Write PLL Divider Register,  DIVF-> 32, DIVQ -> 8 for 200M
+        pll_div = pll_div | INDY_1588_PLL_DIVQ_F(2);    // 2h = /4
+        pll_div = pll_div | INDY_1588_PLL_DIVF_F(0x13); //13h = /20
+        pll_div = pll_div | INDY_1588_PLL_DIVR_F(0);
+        EP_WRM(dev, INDY_1588_PLL_DIVEDER, pll_div, INDY_DEF_MASK);
+        clock_cfg = clock_cfg | INDY_PTP_REF_CLK_CFG_REF_CLK_PERIOD_F(4);
+        break;
     case MEPA_TS_CLOCK_FREQ_200M:
         // Write PLL Divider Register,  DIVF-> 32, DIVQ -> 8 for 200M
         pll_div = pll_div | INDY_1588_PLL_DIVQ_F(3);    // 3h = /8
@@ -107,12 +177,6 @@ static mepa_rc indy_tsu_block_init(mepa_device_t *dev, const mepa_ts_init_conf_t
         data->port_no, ts_init_conf->clk_src, ts_init_conf->clk_freq, ts_init_conf->rx_ts_len,
         ts_init_conf->rx_ts_pos, ts_init_conf->tx_fifo_mode, ts_init_conf->tx_ts_len);
 
-    data->ts_state.clk_src          = ts_init_conf->clk_src;
-    data->ts_state.clk_freq         = ts_init_conf->clk_freq;
-    data->ts_state.tx_fifo_mode     = ts_init_conf->tx_fifo_mode;
-    data->ts_state.tx_fifo_ts_len   = ts_init_conf->tx_ts_len;
-    data->ts_state.tsu_op_mode      = INDY_TS_MODE_STANDALONE;
-
     return MEPA_RC_OK;
 
 }
@@ -122,19 +186,43 @@ static mepa_rc indy_ts_port_init(mepa_device_t *dev, const mepa_ts_init_conf_t *
     uint16_t val = 0;
     phy_data_t *data = (phy_data_t *)dev->data;
 
-    // Reset all timestamp fifos
-    EP_WR(dev, INDY_PTP_TSU_HARD_RESET, 0x1);
-    MEPA_MSLEEP(2);
+    if (!data->ts_state.ts_init_done) {
+        // Reset all timestamp fifos at initialisation.
+        // Resetting tsu with 2-step config and reconfiguring it is disabling timestamping.
+        EP_WR(dev, INDY_PTP_TSU_HARD_RESET, 0x1);
+        MEPA_MSLEEP(2);
+    }
 
+    // common config which are configured in registers for base port.
+    // But, must be stored in data structures for all ports.
+    data->ts_state.clk_src             = ts_init_conf->clk_src;
+    data->ts_state.clk_freq            = ts_init_conf->clk_freq;
+    data->ts_state.tx_fifo_mode        = ts_init_conf->tx_fifo_mode;
+    data->ts_state.tx_fifo_ts_len      = ts_init_conf->tx_ts_len;
+    data->ts_state.tsu_op_mode         = INDY_TS_MODE_STANDALONE;
     // port specific config
-    data->ts_state.rx_ts_len = ts_init_conf->rx_ts_len;
-    data->ts_state.rx_ts_pos = ts_init_conf->rx_ts_pos;
+    data->ts_state.rx_ts_len           = ts_init_conf->rx_ts_len;
+    data->ts_state.rx_ts_pos           = ts_init_conf->rx_ts_pos;
+    data->ts_state.tx_auto_followup_ts = ts_init_conf->tx_auto_followup_ts;
+    data->ts_state.tc_op_mode          = ts_init_conf->tc_op_mode;
+
+    if (ts_init_conf->tc_op_mode == MEPA_TS_TC_OP_MODE_B) {
+        T_E(MEPA_TRACE_GRP_TS, "tc mode B not supported on Lan-8814");
+    }
+
     if (ts_init_conf->rx_ts_pos == MEPA_TS_RX_TIMESTAMP_POS_AT_END) {
 		val = val | INDY_PTP_RX_TAIL_TAG_EN; // Append the rx timestamp at the end of the packet
 		val = val | INDY_PTP_RX_TAIL_TAG_INSERT_IFG_F(1);
 		val = val | INDY_PTP_RX_TAIL_TAG_ER_FORWARD;
 		EP_WRM(dev, INDY_PTP_RX_TAIL_TAG, val, INDY_DEF_MASK);
     }
+
+    // initialise classifier config state with default values.
+    get_default_ts_classifier_cfg(&data->ts_state.ts_port_conf.rx_pkt_conf);
+    get_default_ts_classifier_cfg(&data->ts_state.ts_port_conf.tx_pkt_conf);
+    // initialise clock config
+    get_default_ts_clock_cfg(&data->ts_state.ts_port_conf.rx_clock_conf);
+    get_default_ts_clock_cfg(&data->ts_state.ts_port_conf.tx_clock_conf);
 
 #if 1 // Hardware default values are not aligned
     // Ingress latencies
@@ -183,6 +271,7 @@ static mepa_rc indy_ts_port_init(mepa_device_t *dev, const mepa_ts_init_conf_t *
 
 #endif
 
+    data->ts_state.ts_init_done = TRUE;
     return MEPA_RC_OK;
 }
 
@@ -215,7 +304,6 @@ static mepa_rc indy_ts_init_conf_set(mepa_device_t *dev, const mepa_ts_init_conf
 
     return rc;
 }
-
 static mepa_rc indy_ts_init_conf_get(mepa_device_t *dev, mepa_ts_init_conf_t *const ts_init_conf)
 {
     phy_data_t *data = (phy_data_t *)dev->data;
@@ -230,6 +318,9 @@ static mepa_rc indy_ts_init_conf_get(mepa_device_t *dev, mepa_ts_init_conf_t *co
     ts_init_conf->tx_fifo_spi_conf  = data->ts_state.tx_spi_en;
     ts_init_conf->tx_ts_len         = data->ts_state.tx_fifo_ts_len;
     ts_init_conf->auto_clear_ls     = FALSE;
+    ts_init_conf->tc_op_mode        = data->ts_state.tc_op_mode;
+    ts_init_conf->dly_req_recv_10byte_ts = FALSE;
+    ts_init_conf->tx_auto_followup_ts = data->ts_state.tx_auto_followup_ts;
     MEPA_EXIT(dev);
 
     return MEPA_RC_OK;
@@ -333,6 +424,8 @@ static mepa_rc indy_ts_ltc_ls_en_set(mepa_device_t *dev, const mepa_ts_ls_type_t
 }
 
 
+//Since EP_RD_INCR macro is used in below API, it must be ensured that API must be executed without interruption
+//till its end. No other API should access Lan8814 registers as it may interfere with register addresses.
 static mepa_rc indy_ts_ltc_get(mepa_device_t *dev, mepa_timestamp_t *const ts)
 {
     uint16_t val = 0, ns_h = 0, ns_l = 0;;
@@ -349,22 +442,22 @@ static mepa_rc indy_ts_ltc_get(mepa_device_t *dev, mepa_timestamp_t *const ts)
             ts->seconds.low = 0;
             ts->nanoseconds = 0;
             // Read LTC
-            EP_RD(base_dev, INDY_PTP_LTC_RD_SEC_HI, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_SEC_HI, &val, TRUE);
             ts->seconds.high = val;
             val = 0;
-            EP_RD(base_dev, INDY_PTP_LTC_RD_SEC_MID, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_SEC_MID, &val, FALSE);
             ts->seconds.low = val;
             ts->seconds.low = ts->seconds.low << 16;
             val = 0;
-            EP_RD(base_dev, INDY_PTP_LTC_RD_SEC_LO, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_SEC_LO, &val, FALSE);
             ts->seconds.low = ts->seconds.low | val;
-            EP_RD(base_dev, INDY_PTP_LTC_RD_NS_HI, &ns_h);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_NS_HI, &ns_h, FALSE);
             ts->nanoseconds = ns_h;
             ts->nanoseconds = ts->nanoseconds << 16;
-            EP_RD(base_dev, INDY_PTP_LTC_RD_NS_LO, &ns_l);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_NS_LO, &ns_l, FALSE);
             ts->nanoseconds = ts->nanoseconds | ns_l;
-            EP_RD(base_dev, INDY_PTP_LTC_RD_SUBNS_HI, &val);
-            EP_RD(base_dev, INDY_PTP_LTC_RD_SUBNS_LO, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_SUBNS_HI, &val, FALSE);
+            EP_RD_INCR(base_dev, INDY_PTP_LTC_RD_SUBNS_LO, &val, FALSE);
         } else {
 
             ts->seconds.high = 0;
@@ -373,16 +466,16 @@ static mepa_rc indy_ts_ltc_get(mepa_device_t *dev, mepa_timestamp_t *const ts)
             val = 0;
             ns_l = 0;
             ns_h = 0;
-            EP_RD(base_dev, INDY_PTP_GPIO_RE_CLOCK_SEC_HI, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_GPIO_RE_CLOCK_SEC_HI, &val, TRUE);
             ts->seconds.low = val;
             ts->seconds.low = ts->seconds.low << 16;
             val = 0;
-            EP_RD(base_dev, INDY_PTP_GPIO_RE_CLOCK_SEC_LO, &val);
+            EP_RD_INCR(base_dev, INDY_PTP_GPIO_RE_CLOCK_SEC_LO, &val, FALSE);
             ts->seconds.low = ts->seconds.low | val;
-            EP_RD(base_dev, INDY_PTP_GPIO_RE_CLOCK_NS_HI, &ns_h);
+            EP_RD_INCR(base_dev, INDY_PTP_GPIO_RE_CLOCK_NS_HI, &ns_h, FALSE);
             ts->nanoseconds = ns_h & 0x3FFF;
             ts->nanoseconds = ts->nanoseconds << 16;
-            EP_RD(base_dev, INDY_PTP_GPIO_RE_CLOCK_NS_LO, &ns_l);
+            EP_RD_INCR(base_dev, INDY_PTP_GPIO_RE_CLOCK_NS_LO, &ns_l, FALSE);
             ts->nanoseconds = ts->nanoseconds | ns_l;
         }
     }
@@ -445,37 +538,63 @@ static mepa_rc indy_ts_clock_rateadj_get(mepa_device_t *dev, mepa_ts_scaled_ppb_
     return MEPA_RC_OK;
 }
 
+/*
+Mathematical derivation for rate adjustment register values:
+
+Suppose the frequency change is +x ppb units.
+Time after which 1ns is adjusted is 1/(x ppb) =((10 ^ 9) / x) ns.
+With scaled ppb, time for 1ns adjustment = (((10 ^ 9) * (2 ^ 16)) / x) ns
+
+Indy Pll output is 250Mhz => each clock cycle takes (1 / (250 Mhz)) = (10 ^ 9)/(250 * 10^6) = 4 ns (CLK_PERIOD_250_MHZ).
+
+Number of clock cycles for 1ns adjustment = (((10 ^ 9) * (2 ^ 16)) / x) / CLK_PERIOD_250_MHZ.
+
+Indy register accepts rate adjustment in units of (1 / (2 ^ 32))sub nano seconds per clock cycle i.e (2 ^ 32) units per clock cycle will contribute to 1ns change.
+
+Number of units to be adjusted per clock cycle = (2 ^ 32) / ((((10 ^ 9) * (2 ^ 16)) / x) / CLK_PERIOD_250_MHZ) = ((2 ^ 16) * CLK_PERIOD_250_MHZ * x) / (10 ^ 9).
+
+*/
 static mepa_rc indy_ts_clock_rateadj_set(mepa_device_t *dev, const mepa_ts_scaled_ppb_t *const adj)
 {
     phy_data_t *data = (phy_data_t *)dev->data;
     uint16_t val = 0;
     mepa_device_t *base_dev = data->base_dev;
+    phy_data_t *base_data = (phy_data_t *)base_dev->data;
+
     MEPA_ASSERT(adj == NULL);
     MEPA_ENTER(dev);
-    if ((base_dev == dev) && (adj != 0)) {
-        int16_t adj_dir = (*adj > 0 ? 1 : 0);
-        int64_t adj_abs = MEPA_LABS(*adj), adj_val = 0, adj_abs1 = 0;
-        adj_abs1 = adj_abs;
-        adj_abs1 = adj_abs1 >> 16;
+    if (base_dev == dev) {
+        uint64_t adj_abs = MEPA_LLABS(*adj), adj_val = 0;
+        uint8_t period;
 
-        if ( adj_abs > 0) {
-            adj_val = MEPA_DIV64(1000000000ULL * 0x10000ULL, adj_abs);
-            adj_val = MEPA_DIV64((1LL << 32) * 4,  adj_val);
+        switch (base_data->ts_state.clk_freq) {
+        case MEPA_TS_CLOCK_FREQ_25M:
+        case MEPA_TS_CLOCK_FREQ_250M:
+            period = CLK_PERIOD_250_MHZ;
+            break;
+        case MEPA_TS_CLOCK_FREQ_200M:
+            period = CLK_PERIOD_200_MHZ;
+            break;
+        default:
+            period = CLK_PERIOD_250_MHZ;
+            break;
         }
-        if (adj_abs >= (1LL << 30)) {
-            T_W(MEPA_TRACE_GRP_TS, "High Rate Adjust value  :: direction %d Adj Value : %lld   Port : %d\n", adj_dir, adj_abs, data->port_no);
+
+        adj_val = MEPA_DIV64(((1LL << 16) * period * adj_abs), 1000000000ULL);
+        if (adj_val >= (1LL << 30)) { // width of frequency register is 30 bits => maximum value is less than (1 << 30).
+            T_W(MEPA_TRACE_GRP_TS, "High Rate Adjust value  :: input adj %lld Adj Value : %llu Port : %d\n", *adj, adj_val, data->port_no);
         } else {
-            if (adj_dir) {
-                val = val | INDY_PTP_LTC_RATE_ADJ_HI_DIR;
+            if (*adj > 0) {
+                val = INDY_PTP_LTC_RATE_ADJ_HI_DIR;
             }
             val = val | (0x3FFF & (adj_val >> 16));
             EP_WRM(dev, INDY_PTP_LTC_RATE_ADJ_HI, val, INDY_DEF_MASK);
-            val = 0;
+
             val = (0xFFFF & (adj_val));
             EP_WRM(dev, INDY_PTP_LTC_RATE_ADJ_LO, val, INDY_DEF_MASK);
             data->ts_state.ts_port_conf.rate_adj = *adj;
         }
-        T_I(MEPA_TRACE_GRP_TS, "Rate Adjust :: direction %d Adj Value : %d   Port : %d\n", adj_dir, (0x3FFFFFFF & adj_val), data->port_no);
+        T_I(MEPA_TRACE_GRP_TS, "Rate Adjust :: adj_val %llu adj_abs %llu input-adj %lld Port %d\n", adj_val, adj_abs, *adj, data->port_no);
     }
     MEPA_EXIT(dev);
 
@@ -495,8 +614,8 @@ static mepa_rc indy_ts_clock_adj1ns(mepa_device_t *dev, const mepa_bool_t incr)
         cmd = 0xFFFB & cmd_org;
         EP_WRM(dev, INDY_PTP_CMD_CTL, cmd, INDY_DEF_MASK);
         val = val | INDY_PTP_LTC_STEP_ADJ_DIR;
-
         switch (base_data->ts_state.clk_freq) {
+        case MEPA_TS_CLOCK_FREQ_25M:
         case MEPA_TS_CLOCK_FREQ_250M:
             if (incr) {
                 adj = 4 + 1;
@@ -555,6 +674,7 @@ static mepa_rc indy_ts_clock_adjns(mepa_device_t *dev, const mepa_bool_t incr)
                 adj = 5 - 1;
             }
             break;
+        default:
         }
         EP_WRM(dev, INDY_PTP_LTC_STEP_ADJ_HI, val, INDY_DEF_MASK);
         EP_WRM(dev, INDY_PTP_LTC_STEP_ADJ_LO, adj, INDY_DEF_MASK);
@@ -1073,6 +1193,7 @@ static mepa_rc indy_ts_classifier_ptp_conf_priv(mepa_device_t *dev, mepa_bool_t 
         version = version << 8;
         version = version | (0xFF & val);
         EP_WRM(dev, INDY_PTP_RX_VERSION, version, INDY_DEF_MASK);
+        EP_WRM(dev, INDY_PTP_TX_VERSION, version, INDY_DEF_MASK);
         if (ptp_hdr_conf->domain.mode == MEPA_TS_MATCH_MODE_RANGE) {
             val = 0;
             val = val | INDY_PTP_RX_DOMAIN_DOMAIN_LO_RANGE_EN;
@@ -1372,6 +1493,12 @@ static mepa_rc indy_ts_rx_classifier_conf_set_priv(mepa_device_t *dev, uint16_t 
         T_E(MEPA_TRACE_GRP_TS, "PBB not supported on Indy.  Port : %d\n", data->port_no);
         return MEPA_RC_ERROR;
     }
+    if ((pkt_conf->eth_class_conf.mac_match_select == MEPA_TS_ETH_MATCH_SRC_OR_DEST) &&
+        (pkt_conf->eth_class_conf.mac_match_mode   != MEPA_TS_ETH_ADDR_MATCH_48BIT)) {
+        T_E(MEPA_TRACE_GRP_TS, "When both source or destination mac address need to be matched,"
+                               "match mode must be set to full 48-bit address");
+        return MEPA_RC_ERROR;
+    }
     switch (pkt_conf->pkt_encap_type) {
     case MEPA_TS_ENCAP_ETH_PTP:
         parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_LAYER2_EN;
@@ -1380,14 +1507,15 @@ static mepa_rc indy_ts_rx_classifier_conf_set_priv(mepa_device_t *dev, uint16_t 
         if (pkt_conf->eth_class_conf.mac_match_select == MEPA_TS_ETH_MATCH_SRC_ADDR) {
             MEPA_RC(indy_ts_classifier_mac_conf_set_priv(dev, TRUE, pkt_conf->eth_class_conf.mac_addr));
         } else {
-            parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(pkt_conf->eth_class_conf.mac_match_mode);
-            if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_UNICAST) { // Match any Unicast MAC
+            parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_EN;
+            if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY) { // Match any Unicast or Multicast.
+                parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(6);
+            } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_UNICAST) { // Match any Unicast MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(2);
             } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_MULTICAST) { // Match any Multicast MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(4);
             } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_48BIT) { // Match compleete 48 bit MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(1);
-                parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_EN;
                 MEPA_RC(indy_ts_classifier_mac_conf_set_priv(dev, TRUE, pkt_conf->eth_class_conf.mac_addr));
             }
         }
@@ -1403,20 +1531,20 @@ static mepa_rc indy_ts_rx_classifier_conf_set_priv(mepa_device_t *dev, uint16_t 
         T_I(MEPA_TRACE_GRP_TS, "RX IP/PTP Encap :: Port : %d  IP Ver: %d IP Match Mode : %d: UDP SPort chk : %d UDP SPort chk : %d  S Port: %d D Port :%d\n",
             data->port_no, pkt_conf->ip_class_conf.ip_ver, pkt_conf->ip_class_conf.ip_match_mode, pkt_conf->ip_class_conf.udp_sport_en,
             pkt_conf->ip_class_conf.udp_dport_en, pkt_conf->ip_class_conf.udp_sport, pkt_conf->ip_class_conf.udp_dport);
-        parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_LAYER2_EN;
         parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_PEER_NONPEER_MIX;
         l2_en = l2_en | INDY_PTP_RX_PARSE_L2_MAC_EN_F(pkt_conf->eth_class_conf.mac_match_select);
         if (pkt_conf->eth_class_conf.mac_match_select == MEPA_TS_ETH_MATCH_SRC_ADDR) {
             MEPA_RC(indy_ts_classifier_mac_conf_set_priv(dev, TRUE, pkt_conf->eth_class_conf.mac_addr));
         } else {
-            parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(pkt_conf->eth_class_conf.mac_match_mode);
-            if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_UNICAST) { // Match any Unicast MAC
+            parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_EN;
+            if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY) { // Match any Unicast or Multicast.
+                parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(6);
+            } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_UNICAST) { // Match any Unicast MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(2);
             } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_ANY_MULTICAST) { // Match any Multicast MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(4);
             } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_48BIT) { // Match compleete 48 bit MAC
                 parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_MODE_F(1);
-                parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_EN;
                 MEPA_RC(indy_ts_classifier_mac_conf_set_priv(dev, TRUE, pkt_conf->eth_class_conf.mac_addr));
             }
         }
@@ -1476,6 +1604,12 @@ static mepa_rc indy_ts_tx_classifier_conf_set_priv(mepa_device_t *dev, uint16_t 
     if (pkt_conf->eth_class_conf.vlan_check && pkt_conf->eth_class_conf.vlan_conf.pbb_en) {
         return MEPA_RC_ERROR;
     }
+    if ((pkt_conf->eth_class_conf.mac_match_select == MEPA_TS_ETH_MATCH_SRC_OR_DEST) &&
+        (pkt_conf->eth_class_conf.mac_match_mode   != MEPA_TS_ETH_ADDR_MATCH_48BIT)) {
+        T_E(MEPA_TRACE_GRP_TS, "When both source or destination mac address need to be matched,"
+                               "match mode must be set to full 48-bit address");
+        return MEPA_RC_ERROR;
+    }
 
     switch (pkt_conf->pkt_encap_type) {
     case MEPA_TS_ENCAP_ETH_PTP:
@@ -1521,7 +1655,7 @@ static mepa_rc indy_ts_tx_classifier_conf_set_priv(mepa_device_t *dev, uint16_t 
                 parse_config = parse_config | INDY_PTP_TX_PARSE_CONFIG_MAC_DA_MODE_F(4);
             } else if (pkt_conf->eth_class_conf.mac_match_mode == MEPA_TS_ETH_ADDR_MATCH_48BIT) { // Match compleete 48 bit MAC
                 parse_config = parse_config | INDY_PTP_TX_PARSE_CONFIG_MAC_DA_MODE_F(1);
-                parse_config = parse_config | INDY_PTP_RX_PARSE_CONFIG_MAC_DA_EN;
+                parse_config = parse_config | INDY_PTP_TX_PARSE_CONFIG_MAC_DA_EN;
                 MEPA_RC(indy_ts_classifier_mac_conf_set_priv(dev, FALSE, pkt_conf->eth_class_conf.mac_addr));
             }
         }
@@ -1610,7 +1744,7 @@ static mepa_rc indy_ts_tx_classifier_conf_set(mepa_device_t *dev, uint16_t flow_
         return rc;
     }
 
-    memcpy(&data->ts_state.ts_port_conf.rx_pkt_conf, pkt_conf, sizeof(mepa_ts_classifier_t));
+    memcpy(&data->ts_state.ts_port_conf.tx_pkt_conf, pkt_conf, sizeof(mepa_ts_classifier_t));
     MEPA_EXIT(dev);
     return rc;
 }
@@ -1726,7 +1860,11 @@ static mepa_rc indy_ts_rx_ptp_clock_conf_set(mepa_device_t *dev, uint16_t clock_
         EP_WRM(dev, INDY_PTP_RX_TIMESTAMP_EN, ts_insert, INDY_DEF_MASK);
         EP_WRM(dev, INDY_PTP_RX_CF_MOD_EN, cf_update, INDY_DEF_MASK);
         // 1 : Method B - CF_SUB_ADD_64 - ingress time subtracted from correction field
-        cf_config = cf_config | INDY_PTP_RX_PTP_CF_METHOD | INDY_PTP_RX_PTP_MAX_CF_DIS;
+        // 0 : Method A - ingress timestamp in reserved bytes.
+        if (data->ts_state.tc_op_mode == MEPA_TS_TC_OP_MODE_C) {
+            cf_config |= INDY_PTP_RX_PTP_CF_METHOD;
+        }
+        cf_config = cf_config | INDY_PTP_RX_PTP_MAX_CF_DIS;
         EP_WRM(dev, INDY_PTP_RX_CF_CFG, cf_config, INDY_DEF_MASK);
         ts_config = ts_config | INDY_PTP_RX_PTP_ALT_MASTER_EN;
         ts_config = ts_config | INDY_PTP_RX_PTP_UDP_CHKSUM_DIS;
@@ -1786,10 +1924,20 @@ static mepa_rc indy_ts_tx_ptp_clock_conf_set(mepa_device_t *dev, uint16_t clock_
         case MEPA_TS_PTP_CLOCK_MODE_BC2STEP:
             if (ptpclock_conf->delaym_type == MEPA_TS_PTP_DELAYM_P2P ) {
                 // Peer-to-Peer delay measurement method
-                ts_insert = SYNC_PACKET | PDELAY_REQ_PACKET | PDELAY_RESP_PACKET;
+                ts_insert = PDELAY_REQ_PACKET;
+                if (data->ts_state.tx_auto_followup_ts) {
+                    tx_mod |= INDY_PTP_TX_MOD_FOLLOWUP_TS_INSERT | INDY_PTP_TX_MOD_PDRESPFOLLOWUP_TS_INSERT;
+                } else {
+                    ts_insert |= SYNC_PACKET | PDELAY_RESP_PACKET;
+                }
             } else {
                 // End-to-End delay measurement method
-                ts_insert = SYNC_PACKET | DELAY_REQ_PACKET;
+                ts_insert =  DELAY_REQ_PACKET;
+                if (data->ts_state.tx_auto_followup_ts) {
+                    tx_mod |= INDY_PTP_TX_MOD_FOLLOWUP_TS_INSERT;
+                } else {
+                    ts_insert |= SYNC_PACKET;
+                }
             }
             break;
         case MEPA_TS_PTP_CLOCK_MODE_TC1STEP:
@@ -1813,7 +1961,11 @@ static mepa_rc indy_ts_tx_ptp_clock_conf_set(mepa_device_t *dev, uint16_t clock_
         EP_WRM(dev, INDY_PTP_TX_TIMESTAMP_EN, ts_insert, INDY_DEF_MASK);
         EP_WRM(dev, INDY_PTP_TX_CF_MOD_EN, cf_update, INDY_DEF_MASK);
         // 1 : Method B - CF_SUB_ADD_64 - ingress time subtracted from correction field
-        cf_config = cf_config | INDY_PTP_TX_PTP_CF_METHOD | INDY_PTP_TX_PTP_MAX_CF_DIS;
+        // 0 : Method A - subtract ingress timestamp in reserved bytes.
+        if (data->ts_state.tc_op_mode == MEPA_TS_TC_OP_MODE_C) {
+            cf_config |= INDY_PTP_TX_PTP_CF_METHOD;
+        }
+        cf_config = cf_config | INDY_PTP_TX_PTP_MAX_CF_DIS;
         EP_WRM(dev, INDY_PTP_TX_CF_CFG, cf_config, INDY_DEF_MASK);
         ts_config = ts_config | INDY_PTP_TX_PTP_ALT_MASTER_EN;
         ts_config = ts_config | INDY_PTP_TX_PTP_UDP_CHKSUM_DIS;
@@ -2015,6 +2167,8 @@ static mepa_rc indy_ts_tx_ts_get (mepa_device_t *dev)
     return MEPA_RC_OK;
 }
 
+//Since EP_RD_INCR macro is used in below API, it must be ensured that API must be executed without interruption
+//till its end. No other API should access Lan8814 registers as it may interfere with register addresses.
 mepa_rc indy_ts_stats_get(mepa_device_t *dev, mepa_ts_stats_t   *const statistics)
 {
     uint16_t val = 0, val2 = 0;
@@ -2022,23 +2176,23 @@ mepa_rc indy_ts_stats_get(mepa_device_t *dev, mepa_ts_stats_t   *const statistic
     MEPA_ASSERT(statistics == NULL);
     MEPA_ENTER(dev);
     memset(statistics, 0, sizeof(mepa_ts_stats_t));
-    EP_RD(dev, INDY_PTP_TX_CHKSUM_DROPPED_CNT_HI, &val);
-    EP_RD(dev, INDY_PTP_TX_CHKSUM_DROPPED_CNT_LO, &val2);
+    EP_RD_INCR(dev, INDY_PTP_TX_CHKSUM_DROPPED_CNT_HI, &val, TRUE);
+    EP_RD_INCR(dev, INDY_PTP_TX_CHKSUM_DROPPED_CNT_LO, &val2, FALSE);
     statistics->egr_fcs_err = val;
     statistics->egr_fcs_err = statistics->egr_fcs_err << 16 | val2;
 
-    EP_RD(dev, INDY_PTP_TX_FRMS_MOD_CNT_HI, &val);
-    EP_RD(dev, INDY_PTP_TX_FRMS_MOD_CNT_LO, &val2);
+    EP_RD_INCR(dev, INDY_PTP_TX_FRMS_MOD_CNT_HI, &val, FALSE);
+    EP_RD_INCR(dev, INDY_PTP_TX_FRMS_MOD_CNT_LO, &val2, FALSE);
     statistics->egr_frm_mod_cnt = val;
     statistics->egr_frm_mod_cnt = statistics->egr_frm_mod_cnt << 16 | val2;
 
-    EP_RD(dev, INDY_PTP_RX_CHKSUM_DROPPED_CNT_HI, &val);
-    EP_RD(dev, INDY_PTP_RX_CHKSUM_DROPPED_CNT_LO, &val2);
+    EP_RD_INCR(dev, INDY_PTP_RX_CHKSUM_DROPPED_CNT_HI, &val, TRUE);
+    EP_RD_INCR(dev, INDY_PTP_RX_CHKSUM_DROPPED_CNT_LO, &val2, FALSE);
     statistics->ingr_fcs_err = val;
     statistics->ingr_fcs_err = statistics->ingr_fcs_err << 16 | val2;
 
-    EP_RD(dev, INDY_PTP_RX_FRMS_MOD_CNT_HI, &val);
-    EP_RD(dev, INDY_PTP_RX_FRMS_MOD_CNT_LO, &val2);
+    EP_RD_INCR(dev, INDY_PTP_RX_FRMS_MOD_CNT_HI, &val, FALSE);
+    EP_RD_INCR(dev, INDY_PTP_RX_FRMS_MOD_CNT_LO, &val2, FALSE);
     statistics->ingr_frm_mod_cnt = val;
     statistics->ingr_frm_mod_cnt = statistics->ingr_frm_mod_cnt << 16 | val2;
 
@@ -2073,15 +2227,17 @@ static mepa_rc indy_ts_event_set (mepa_device_t *dev, const mepa_bool_t enable, 
         mask_changed = (0 != (data->ts_state.ts_port_conf.event_mask & ev_mask));
         data->ts_state.ts_port_conf.event_mask &= ~ev_mask;
     }
-    EP_RD(dev, INDY_PTP_TSU_INT_EN, &mask);
     if (mask_changed) {
-        if (ev_mask & MEPA_TS_EGR_FIFO_OVERFLOW) {
+        EP_RD(dev, INDY_PTP_TSU_INT_EN, &mask);
+        if (data->ts_state.ts_port_conf.event_mask & MEPA_TS_EGR_FIFO_OVERFLOW) {
             mask |= INDY_PTP_TSU_INT_TX_TS_OVRFL_EN;
-            data->ts_state.ts_port_conf.event_mask = data->ts_state.ts_port_conf.event_mask | MEPA_TS_EGR_FIFO_OVERFLOW;
+        } else {
+            mask &= ~INDY_PTP_TSU_INT_TX_TS_OVRFL_EN;
         }
-        if (ev_mask & MEPA_TS_EGR_TIMESTAMP_CAPTURED) {
-            mask |=  INDY_PTP_TSU_INT_TX_TS_EN;
-            data->ts_state.ts_port_conf.event_mask = data->ts_state.ts_port_conf.event_mask | MEPA_TS_EGR_TIMESTAMP_CAPTURED;
+        if (data->ts_state.ts_port_conf.event_mask & MEPA_TS_EGR_TIMESTAMP_CAPTURED) {
+            mask |= INDY_PTP_TSU_INT_TX_TS_EN;
+        } else {
+            mask &= ~INDY_PTP_TSU_INT_TX_TS_EN;
         }
         EP_WRM(dev, INDY_PTP_TSU_INT_EN, mask, INDY_DEF_MASK);
     }
@@ -2119,6 +2275,52 @@ void indy_ts_fifo_read_install(mepa_device_t *dev, mepa_ts_fifo_read_t rd_cb)
     phy_data_t *data = (phy_data_t *)dev->data;
     MEPA_ENTER(dev);
     data->ts_state.fifo_cb = rd_cb;
+    MEPA_EXIT(dev);
+}
+
+//Since EP_RD_INCR macro is used in below API, it must be ensured that API must be executed without interruption
+//till its end. No other API should access Lan8814 registers as it may interfere with register addresses.
+mepa_rc indy_ts_fifo_get(mepa_device_t *dev, mepa_fifo_ts_entry_t ts_list[], const size_t size, uint32_t *const num)
+{
+    uint16_t val, i;
+
+    if (size < MEPA_TS_FIFO_MAX_ENTRIES) {
+        T_E(MEPA_TRACE_GRP_TS, "Size of Input TS list is less than 8\n");
+        return MEPA_RC_ERROR;
+    }
+    MEPA_ENTER(dev);
+    for (i = 0; i < MEPA_TS_FIFO_MAX_ENTRIES; i++) {
+        EP_RD_INCR(dev, INDY_PTP_TX_TS_NS_HI, &val, TRUE);
+
+        if (val & INDY_PTP_TX_TS_NS_PTP_TX_TS_VALID) {
+            ts_list[i].ts.nanoseconds = (((val) & 0x3fff) << 16);
+            EP_RD_INCR(dev, INDY_PTP_TX_TS_NS_LO, &val, FALSE);
+            ts_list[i].ts.nanoseconds = ts_list[i].ts.nanoseconds | val;
+
+            EP_RD_INCR(dev, INDY_PTP_TX_TS_SEC_HI, &val, FALSE);
+            ts_list[i].ts.seconds.low =  val;
+
+            EP_RD_INCR(dev, INDY_PTP_TX_TS_SEC_LO, &val, FALSE);
+            ts_list[i].ts.seconds.low = (ts_list[i].ts.seconds.low << 16) | val;
+            ts_list[i].ts.seconds.high = 0;
+
+            EP_RD_INCR(dev, INDY_PTP_TX_MSG_HEADER1, &val, FALSE);
+            ts_list[i].sig.msg_type = val & 0xF;
+            ts_list[i].sig.crc_src_port = val >> 4;
+            ts_list[i].sig.has_crc_src = TRUE;
+
+            EP_RD_INCR(dev, INDY_PTP_TX_MSG_HEADER2, &val, FALSE);
+            ts_list[i].sig.sequence_id = val;
+        } else {
+            break;
+        }
+    }
+    *num = i;
+    MEPA_EXIT(dev);
+    T_I(MEPA_TRACE_GRP_TS, "FIFO entries read = %d ts[0]: msg_type 0x%x crc_src_port 0x%x", *num, ts_list[0].sig.msg_type, ts_list[0].sig.crc_src_port);
+
+    return MEPA_RC_OK;
+
     MEPA_EXIT(dev);
 }
 
@@ -2195,7 +2397,7 @@ mepa_rc indy_ts_test_config(mepa_device_t *dev, uint16_t test_id, mepa_bool_t re
     ptp_class_conf.version.lower = 0x2;
     ptp_class_conf.version.upper = 0x2;
     ptp_class_conf.minor_version.lower = 0x0;
-    ptp_class_conf.minor_version.upper = 0x0;
+    ptp_class_conf.minor_version.upper = 0x1;
 
     if ((rc = indy_ts_rx_classifier_conf_set_priv(dev, 0, &pkt_conf)) != MEPA_RC_OK) {
         MEPA_EXIT(dev);
@@ -2320,5 +2522,6 @@ mepa_ts_driver_t indy_ts_drivers = {
     .mepa_ts_fifo_read_install          = indy_ts_fifo_read_install,
     .mepa_ts_fifo_empty                 = indy_ts_tx_ts_get,
     .mepa_ts_test_config                = indy_ts_test_config,
+    .mepa_ts_fifo_get                   = indy_ts_fifo_get,
 };
-
+#endif // !defined MEPA_LAN8814_LIGHT

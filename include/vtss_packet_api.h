@@ -89,6 +89,9 @@ typedef struct
     vtss_packet_rx_queue_t l3_uc_queue;       /**< L3 routing unicast queue */
     vtss_packet_rx_queue_t l3_other_queue;    /**< L3 routing other frames queue */
 #endif /* VTSS_FEATURE_LAYER3 */
+#if defined(VTSS_FEATURE_REDBOX)
+    vtss_packet_rx_queue_t sv_queue;          /**< Supervision frames */
+#endif
 } vtss_packet_rx_queue_map_t;
 
 /** \brief CPU Rx configuration */
@@ -343,7 +346,7 @@ typedef enum {
 #define VTSS_LAN966X_PACKET_HDR_SIZE_BYTES 32 /**< Max header size. Worst case: INJ (28 bytes for IFH + 4 bytes for VLAN tag) */
 
 // Find the largest required header size.
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_PACKET_HDR_SIZE_BYTES VTSS_FA_PACKET_HDR_SIZE_BYTES /**< Maximum header size. This define is only useful if you only compile for one target. */
 #elif defined(VTSS_ARCH_JAGUAR_2)
 #define VTSS_PACKET_HDR_SIZE_BYTES VTSS_JR2_PACKET_HDR_SIZE_BYTES /**< Maximum header size. This define is only useful if you only compile for one target. */
@@ -493,6 +496,8 @@ typedef struct {
     vtss_sflow_type_t sflow_type;
     vtss_port_no_t sflow_port_no;
     vtss_iflow_id_t iflow_id;
+    BOOL rb_port_a;
+    BOOL rb_tagged;
 } vtss_packet_rx_info_t;
 
 #if defined(VTSS_FEATURE_PACKET_PIPELINE_PT)
@@ -501,28 +506,45 @@ typedef struct {
  * Specifies where a frame is injected into the chip.
  */
 typedef enum {
-    VTSS_PACKET_PIPELINE_PT_NONE         =  0, /**< None                               */
-    VTSS_PACKET_PIPELINE_PT_ANA_PORT_VOE =  2, /**< Analyzer port VOE MEP (up)         */
-    VTSS_PACKET_PIPELINE_PT_ANA_CL       =  3, /**< Basic classification               */
-    VTSS_PACKET_PIPELINE_PT_ANA_CLM      =  4, /**< Analyzer CLM (up)                  */
-    VTSS_PACKET_PIPELINE_PT_ANA_OU_VOI   =  6, /**< Analyzer outer VOI (MIP) (up)      */
-    VTSS_PACKET_PIPELINE_PT_ANA_OU_SW    =  7, /**< Analyzer outer software MEP (up)   */
-    VTSS_PACKET_PIPELINE_PT_ANA_OU_VOE   =  9, /**< Analyzer outer VOE MEP (up)        */
-    VTSS_PACKET_PIPELINE_PT_ANA_IN_VOE   = 11, /**< Analyzer inner VOE MEP (up)        */
-    VTSS_PACKET_PIPELINE_PT_ANA_IN_SW    = 13, /**< Analyzer inner software MEP (up)   */
-    VTSS_PACKET_PIPELINE_PT_ANA_IN_VOI   = 14, /**< Analyzer inner VOI (MIP) (up)      */
-    VTSS_PACKET_PIPELINE_PT_ANA_DONE     = 16, /**< Analyzer done                      */
-    VTSS_PACKET_PIPELINE_PT_REW_IN_VOI   = 17, /**< Rewriter inner VOI (MIP) (down)    */
-    VTSS_PACKET_PIPELINE_PT_REW_IN_SW    = 18, /**< Rewriter inner software MEP (down) */
-    VTSS_PACKET_PIPELINE_PT_REW_IN_VOE   = 19, /**< Rewriter inner VOE MEP (down)      */
-    VTSS_PACKET_PIPELINE_PT_REW_OU_VOE   = 20, /**< Rewriter outer VOE MEP (down)      */
-    VTSS_PACKET_PIPELINE_PT_REW_OU_SW    = 21, /**< Rewriter outer software MEP (down) */
-    VTSS_PACKET_PIPELINE_PT_REW_OU_VOI   = 22, /**< Rewriter outer VOI (MIP) (down)    */
-    VTSS_PACKET_PIPELINE_PT_REW_PORT_VOE = 24  /**< Rewriter port VOE MEP (down)       */
+    VTSS_PACKET_PIPELINE_PT_NONE, /**< None                               */
+    VTSS_PACKET_PIPELINE_PT_ANA_RB, /**< Analyzer RedBOX                    */
+    VTSS_PACKET_PIPELINE_PT_ANA_VRAP, /**< Analyzer port VOE MEP (up)         */
+    VTSS_PACKET_PIPELINE_PT_ANA_PORT_VOE, /**< Analyzer port VOE MEP (up)         */
+    VTSS_PACKET_PIPELINE_PT_ANA_CL, /**< Basic classification               */
+    VTSS_PACKET_PIPELINE_PT_ANA_CLM, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_IPT_PROT, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_OU_VOI, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_OU_SW, /**< Analyzer outer software MEP (up)   */
+    VTSS_PACKET_PIPELINE_PT_ANA_OU_PROT, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_OU_VOE, /**< Analyzer outer VOE MEP (up)        */
+    VTSS_PACKET_PIPELINE_PT_ANA_MID_PROT, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_IN_VOE, /**< Analyzer inner VOE MEP (up)        */
+    VTSS_PACKET_PIPELINE_PT_ANA_IN_PROT, /**< Analyzer CLM (up)                  */
+    VTSS_PACKET_PIPELINE_PT_ANA_IN_SW, /**< Analyzer inner software MEP (up)   */
+    VTSS_PACKET_PIPELINE_PT_ANA_IN_VOI, /**< Analyzer inner VOI (MIP) (up)      */
+    VTSS_PACKET_PIPELINE_PT_ANA_VLAN, /**< Analyzer inner VOI (MIP) (up)      */
+    VTSS_PACKET_PIPELINE_PT_ANA_DONE, /**< Analyzer done                      */
+    VTSS_PACKET_PIPELINE_PT_REW_IN_VOI, /**< Rewriter inner VOI (MIP) (down)    */
+    VTSS_PACKET_PIPELINE_PT_REW_IN_SW, /**< Rewriter inner software MEP (down) */
+    VTSS_PACKET_PIPELINE_PT_REW_IN_VOE, /**< Rewriter inner VOE MEP (down)      */
+    VTSS_PACKET_PIPELINE_PT_REW_OU_VOE, /**< Rewriter outer VOE MEP (down)      */
+    VTSS_PACKET_PIPELINE_PT_REW_OU_SW, /**< Rewriter outer software MEP (down) */
+    VTSS_PACKET_PIPELINE_PT_REW_OU_VOI, /**< Rewriter outer VOI (MIP) (down)    */
+    VTSS_PACKET_PIPELINE_PT_REW_OU_SAT, /**< Rewriter outer VOI (MIP) (down)    */
+    VTSS_PACKET_PIPELINE_PT_REW_PORT_VOE,  /**< Rewriter port VOE MEP (down)       */
+    VTSS_PACKET_PIPELINE_PT_REW_VCAP/**< Rewriter port VOE MEP (down)       */
 } vtss_packet_pipeline_pt_t;
 #endif /* defined(VTSS_FEATURE_PACKET_PIPELINE_PT) */
 
 #define VTSS_ISDX_CPU_TX 1023 /**< ISDX used for CPU transmissions */
+
+// RedBox forward selection
+typedef enum {
+    VTSS_PACKET_RB_FWD_DEFAULT, // Forwarding determined by RedBox
+    VTSS_PACKET_RB_FWD_A,       // Forwarding to port A only
+    VTSS_PACKET_RB_FWD_B,       // Forwarding to port B only
+    VTSS_PACKET_RB_FWD_BOTH     // Forwarding to port A and B
+} vtss_packet_rb_fwd_t;
 
 /**
  * \brief Injection Properties.
@@ -562,6 +584,10 @@ typedef struct {
 #if defined(VTSS_FEATURE_PACKET_PIPELINE_PT)
     vtss_packet_pipeline_pt_t pipeline_pt;
 #endif /* defined(VTSS_FEATURE_PACKET_PIPELINE_PT) */
+    BOOL                 rb_tag_disable;       // RedBox HSR/PRP tag disable
+    BOOL                 rb_dd_disable;        // RedBox HSR duplicate discard disable
+    BOOL                 rb_ring_netid_enable; // RedBox inserts ring_netid (always 0) rather than its configured NetId in HSR tag
+    vtss_packet_rb_fwd_t rb_fwd;               // RedBox forwarding selection
 } vtss_packet_tx_info_t;
 
 /**
@@ -633,7 +659,7 @@ vtss_rc vtss_packet_tx_hdr_encode(const vtss_inst_t                  inst,
                                         u32                   *const bin_hdr_len);
 
 /* Maximum Rx/Tx IFH length */
-#if defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_PACKET_TX_IFH_MAX     36  /**< Tx IFH byte length (Constant) */
 #define VTSS_PACKET_RX_IFH_MAX     36  /**< Rx IFH byte length (Constant) */
 #elif defined(VTSS_ARCH_JAGUAR_2)

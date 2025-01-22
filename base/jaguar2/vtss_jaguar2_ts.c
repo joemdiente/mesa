@@ -159,6 +159,35 @@ static vtss_rc jr2_ts_timeofday_prev_pps_get(vtss_state_t *vtss_state, vtss_time
     return jr2_ts_domain_timeofday_prev_pps_get(vtss_state, 0, ts);
 }
 
+static vtss_rc jr2_ts_multi_domain_timeofday_get(vtss_state_t *vtss_state, const uint32_t domain_cnt, vtss_timestamp_t *const ts)
+{
+#if defined(VTSS_ARCH_JAGUAR_2_C)
+    uint32_t value, domain;
+    vtss_timestamp_t *t_stamp;
+
+    JR2_WRM(VTSS_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG, VTSS_F_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG_PTP_TOD_FREEZE(7), VTSS_M_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG_PTP_TOD_FREEZE);
+    for (domain = 0; domain < domain_cnt; domain++) {
+        t_stamp = &ts[domain];
+        JR2_RD(VTSS_DEVCPU_PTP_PTP_STATUS_PTP_CUR_SEC_MSB(domain), &value);
+        t_stamp->sec_msb = VTSS_X_DEVCPU_PTP_PTP_STATUS_PTP_CUR_SEC_MSB_PTP_CUR_SEC_MSB(value);
+        JR2_RD(VTSS_DEVCPU_PTP_PTP_STATUS_PTP_CUR_SEC_LSB(domain), &t_stamp->seconds);
+        JR2_RD(VTSS_DEVCPU_PTP_PTP_STATUS_PTP_CUR_NSEC(domain), &value);
+        t_stamp->nanoseconds = VTSS_X_DEVCPU_PTP_PTP_STATUS_PTP_CUR_NSEC_PTP_CUR_NSEC(value);
+        if (t_stamp->nanoseconds >= 0x3ffffff0 && t_stamp->nanoseconds <= 0x3fffffff) { /* -1..-16 = 10^9-1..16 */
+            VTSS_RC(vtss_timestampSubSec(t_stamp));
+            t_stamp->nanoseconds = 999999984 + (t_stamp->nanoseconds & 0xf);
+        }
+        t_stamp->nanosecondsfrac = 0;
+        VTSS_I("domain %u ts sec_msb: %u, seconds: %u, nanoseconds: %u, nanosecondsfrac: %u", domain, t_stamp->sec_msb, t_stamp->seconds, t_stamp->nanoseconds, t_stamp->nanosecondsfrac);
+    }
+
+    JR2_WRM(VTSS_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG, VTSS_F_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG_PTP_TOD_FREEZE(0), VTSS_M_DEVCPU_PTP_PTP_CFG_PTP_MISC_CFG_PTP_TOD_FREEZE);
+    return VTSS_RC_OK;
+#else
+    return VTSS_RC_ERROR;
+#endif
+}
+
 static vtss_rc jr2_ts_domain_timeofday_set(vtss_state_t *vtss_state, u32 domain, const vtss_timestamp_t *ts)
 {
     //truncate nanosec value
@@ -285,8 +314,8 @@ static vtss_rc jr2_ts_external_clock_mode_set(vtss_state_t *vtss_state)
 {
     vtss_ts_ext_clock_mode_t *ext_clock_mode = &vtss_state->ts.conf.ext_clock_mode;
 
-    VTSS_D("one_pps_mode: %u, enable: %u, freq: %u", ext_clock_mode->one_pps_mode, ext_clock_mode->enable, ext_clock_mode->freq);
-    JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
+    VTSS_D("one_pps_mode: %u, enable: %u, freq: %u domain: %u", ext_clock_mode->one_pps_mode, ext_clock_mode->enable, ext_clock_mode->freq, ext_clock_mode->domain);
+    JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, ext_clock_mode->domain);
     if (ext_clock_mode->enable) {
         /* When external sync pulse is enabled the 'one_pps_mode' is not considered */
         u32 dividers = HW_NS_PR_SEC/ext_clock_mode->freq;
@@ -298,14 +327,14 @@ static vtss_rc jr2_ts_external_clock_mode_set(vtss_state_t *vtss_state)
                VTSS_F_DEVCPU_PTP_PTP_PINS_PIN_WF_LOW_PERIOD_PIN_WFL(low_div));
 
         (void) vtss_jr2_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN], VTSS_GPIO_ALT_0);
-        JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_NOSYNC, 0);
+        JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_NOSYNC, ext_clock_mode->domain);
     } else if (ext_clock_mode->one_pps_mode == TS_EXT_CLOCK_MODE_ONE_PPS_OUTPUT) {
         (void) vtss_jr2_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN], VTSS_GPIO_ALT_0);
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD(EXT_CLK_PIN),
                VTSS_F_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD_PIN_WFH(PPS_WIDTH));
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_LOW_PERIOD(EXT_CLK_PIN), 0);
 
-        JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, 0);
+        JR2_PTP_PIN_ACTION (EXT_CLK_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, ext_clock_mode->domain);
     } else {
         /* This is for 'one_pps_mode'  TS_EXT_CLOCK_MODE_ONE_PPS_INPUT - TS_EXT_CLOCK_MODE_ONE_PPS_OUTPUT_INPUT - TS_EXT_CLOCK_MODE_MAX */
         (void) vtss_jr2_gpio_mode(vtss_state, 0, ptp_gpio[EXT_CLK_PIN], VTSS_GPIO_IN);
@@ -316,7 +345,7 @@ static vtss_rc jr2_ts_external_clock_mode_set(vtss_state_t *vtss_state)
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD(EXT_PPS_PIN),
                VTSS_F_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD_PIN_WFH(PPS_WIDTH));
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_LOW_PERIOD(EXT_PPS_PIN), 0);
-        JR2_PTP_PIN_ACTION (EXT_PPS_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, 0);
+        JR2_PTP_PIN_ACTION (EXT_PPS_PIN, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, ext_clock_mode->domain);
     } else {
         /* This for disabled 'one_pps_mode' */
         (void) vtss_jr2_gpio_mode(vtss_state, 0, ptp_gpio[EXT_PPS_PIN], VTSS_GPIO_IN);
@@ -332,7 +361,6 @@ static vtss_rc jr2_ts_external_clock_mode_set(vtss_state_t *vtss_state)
 static vtss_rc jr2_ts_alt_clock_saved_get(vtss_state_t *vtss_state, u64 *const saved)
 {
     u32                       nsec;
-    vtss_ts_alt_clock_mode_t  *alt_clock_mode = &vtss_state->ts.conf.alt_clock_mode;
 
     JR2_RD(VTSS_DEVCPU_PTP_PTP_PINS_PTP_TOD_NSEC(ALT_LDST_PIN), &nsec);
     nsec = VTSS_X_DEVCPU_PTP_PTP_PINS_PTP_TOD_NSEC_PTP_TOD_NSEC(nsec);
@@ -340,15 +368,6 @@ static vtss_rc jr2_ts_alt_clock_saved_get(vtss_state_t *vtss_state, u64 *const s
         nsec = 999999984 + (nsec & 0xf);
     }
     *saved = (u64)nsec << 16;
-    if (alt_clock_mode->one_pps_in) {
-        if (alt_clock_mode->save && alt_clock_mode->load) {
-            VTSS_E("save and load cannot be enabled at the same time");
-        } else if (alt_clock_mode->save) {
-            JR2_PTP_PIN_ACTION (ALT_LDST_PIN, PTP_PIN_ACTION_SAVE, PTP_PIN_ACTION_NOSYNC, 0);
-        } else if (alt_clock_mode->load) {
-            JR2_PTP_PIN_ACTION (ALT_LDST_PIN, PTP_PIN_ACTION_LOAD, PTP_PIN_ACTION_NOSYNC, 0);
-        }
-    }
     return VTSS_RC_OK;
 }
 
@@ -363,7 +382,8 @@ static vtss_rc jr2_ts_alt_clock_mode_set(vtss_state_t *vtss_state)
 {
     vtss_ts_alt_clock_mode_t *alt_clock_mode = &vtss_state->ts.conf.alt_clock_mode;
 
-    JR2_PTP_PIN_ACTION (ALT_LDST_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
+    JR2_PTP_PIN_ACTION (ALT_PPS_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
+
     if (alt_clock_mode->one_pps_out) {
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD(ALT_PPS_PIN),
                VTSS_F_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD_PIN_WFH(PPS_WIDTH));
@@ -375,7 +395,7 @@ static vtss_rc jr2_ts_alt_clock_mode_set(vtss_state_t *vtss_state)
         (void) vtss_jr2_gpio_mode(vtss_state, 0, ptp_gpio[ALT_PPS_PIN], VTSS_GPIO_IN);
     }
 
-    JR2_PTP_PIN_ACTION (ALT_PPS_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
+    JR2_PTP_PIN_ACTION (ALT_LDST_PIN, PTP_PIN_ACTION_IDLE, PTP_PIN_ACTION_NOSYNC, 0);
     if (alt_clock_mode->one_pps_in) {
         if (alt_clock_mode->save && alt_clock_mode->load) {
             VTSS_E("save and load cannot be enabled at the same time");
@@ -516,7 +536,7 @@ static vtss_rc jr2_ts_delay_asymmetry_set(vtss_state_t *vtss_state, vtss_port_no
     return VTSS_RC_OK;
 }
 
-static vtss_rc jr2_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no)
+static vtss_rc jr2_ts_operation_mode_set(vtss_state_t *vtss_state, vtss_port_no_t port_no, BOOL mode_domain_config)
 {
     vtss_ts_mode_t         mode = vtss_state->ts.port_conf[port_no].mode.mode;
     u32                    domain = vtss_state->ts.port_conf[port_no].mode.domain;
@@ -1099,7 +1119,7 @@ static vtss_rc jr2_ts_external_io_mode_set(vtss_state_t *vtss_state, u32 io)
     } else if (ext_io_mode->pin == TS_EXT_IO_MODE_ONE_PPS_OUTPUT) {
         JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD(io),
                VTSS_F_DEVCPU_PTP_PTP_PINS_PIN_WF_HIGH_PERIOD_PIN_WFH(PPS_WIDTH));
-        JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_LOW_PERIOD(EXT_CLK_PIN), 0);     /* TBD_henrikb Why is this register write to EXT_CLK_PIN? Should it have been 'io' as all other operations in this function. */
+        JR2_WR(VTSS_DEVCPU_PTP_PTP_PINS_PIN_WF_LOW_PERIOD(io), 0);
         JR2_PTP_PIN_ACTION (io, PTP_PIN_ACTION_CLOCK, PTP_PIN_ACTION_SYNC, ext_io_mode->domain);
     } else  if (ext_io_mode->pin == TS_EXT_IO_MODE_ONE_PPS_LOAD) {
         JR2_PTP_PIN_ACTION (io, PTP_PIN_ACTION_LOAD, PTP_PIN_ACTION_SYNC, ext_io_mode->domain);
@@ -1120,14 +1140,18 @@ static vtss_rc jr2_ts_saved_timeofday_get(vtss_state_t *vtss_state, u32 io, vtss
 {
     vtss_rc rc ;
     vtss_ts_ext_io_mode_t *ext_io_mode;
+    vtss_ts_alt_clock_mode_t *alt_clock_mode;
+
     if (io >= VTSS_TS_IO_ARRAY_SIZE) {
         VTSS_E("invalid io pin: %u", io);
         return VTSS_RC_ERROR;
     }
     ext_io_mode = &vtss_state->ts.io_cfg[io];
+    alt_clock_mode = &vtss_state->ts.conf.alt_clock_mode;
     VTSS_D("io pin %d, pin cfg: %u, domain: %u, freq: %u", io, ext_io_mode->pin, ext_io_mode->domain, ext_io_mode->freq);
     rc = jr2_ts_io_pin_timeofday_get(vtss_state, io, ts, tc);
-    if (ext_io_mode->pin == TS_EXT_IO_MODE_ONE_PPS_SAVE) {
+    if ((ext_io_mode->pin == TS_EXT_IO_MODE_ONE_PPS_SAVE) ||
+        ((alt_clock_mode->one_pps_in) && alt_clock_mode->save)) {
         JR2_PTP_PIN_ACTION (io, PTP_PIN_ACTION_SAVE, PTP_PIN_ACTION_SYNC, ext_io_mode->domain);
     }
     return rc;
@@ -1188,6 +1212,11 @@ static vtss_rc jr2_ts_seq_cnt_get(vtss_state_t *vtss_state,
         rc = VTSS_RC_ERROR;
     }
     return rc;
+}
+
+vtss_rc vtss_cil_ts_conf_set(vtss_state_t *vtss_state, const vtss_ts_conf_t *const conf)
+{
+    return VTSS_RC_OK;
 }
 
 /* - Debug print --------------------------------------------------- */
@@ -1336,6 +1365,7 @@ vtss_rc vtss_jr2_ts_init(vtss_state_t *vtss_state, vtss_init_cmd_t cmd)
         state->timeofday_next_pps_get = jr2_ts_timeofday_next_pps_get;
         state->timeofday_prev_pps_get = jr2_ts_timeofday_prev_pps_get;
         state->domain_timeofday_next_pps_get = jr2_ts_domain_timeofday_next_pps_get;
+        state->multi_domain_timeofday_get = jr2_ts_multi_domain_timeofday_get;
         state->timeofday_offset_set = jr2_ts_timeofday_offset_set;
         state->domain_timeofday_offset_set = jr2_ts_domain_timeofday_offset_set;
         state->adjtimer_set = jr2_ts_adjtimer_set;

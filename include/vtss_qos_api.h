@@ -140,7 +140,7 @@ vtss_rc vtss_qos_conf_set(const vtss_inst_t      inst,
 /* Number of Port policers (per port) available in HW */
 #if defined(VTSS_ARCH_SERVAL_T)
 #define VTSS_PORT_POLICERS 2 /**< Number of Port policers (per port) available in HW */
-#elif defined(VTSS_ARCH_JAGUAR_2) || defined (VTSS_ARCH_SPARX5)
+#elif defined(VTSS_ARCH_JAGUAR_2) || defined (VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 #define VTSS_PORT_POLICERS 4 /**< Number of Port policers (per port) available in HW */
 #else
 #define VTSS_PORT_POLICERS 1 /**< Number of Port policers (per port) available in HW */
@@ -185,7 +185,7 @@ typedef struct {
 typedef struct {
     vtss_policer_type_t type;      /**< Policer type */
     BOOL                enable;    /**< Enable/disable policer */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined (VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined (VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     BOOL                cm;        /**< Colour Mode (TRUE means colour aware) */
 #endif /* VTSS_ARCH_JAGUAR_2 */
     BOOL                cf;        /**< Coupling Flag */
@@ -249,7 +249,10 @@ vtss_rc vtss_mep_policer_conf_set(const vtss_inst_t             inst,
  **/
 typedef enum {
     VTSS_SHAPER_MODE_LINE, /**< Use line-rate for the shaper */
-    VTSS_SHAPER_MODE_DATA  /**< Use data-rate for the shaper */
+    VTSS_SHAPER_MODE_DATA, /**< Use data-rate for the shaper */
+#if defined(VTSS_FEATURE_QOS_EGRESS_SHAPER_FRAME)
+    VTSS_SHAPER_MODE_FRAME  /**< Use frame-rate for the shaper */
+#endif
 } vtss_shaper_mode_t;
 #endif
 
@@ -257,11 +260,11 @@ typedef enum {
  * \brief Shaper
  **/
 typedef struct {
-    vtss_burst_level_t level;          /**< CBS (Committed Burst Size).                 Unit: bytes */
-    vtss_bitrate_t     rate;           /**< CIR (Committed Information Rate).           Unit: kbps. Use VTSS_BITRATE_DISABLED to disable shaper */
+    vtss_burst_level_t level;          /**< CBS (Committed Burst Size).       Unit: bytes. frames if frame-rate */
+    vtss_bitrate_t     rate;           /**< CIR (Committed Information Rate). Unit: kbps. frame/s if frame-rate. Use VTSS_BITRATE_DISABLED to disable shaper */
 #if defined(VTSS_FEATURE_QOS_EGRESS_SHAPERS_DLB)
-    vtss_burst_level_t ebs;            /**< EBS (Excess Burst Size).                    Unit: bytes */
-    vtss_bitrate_t     eir;            /**< EIR (Excess Information Rate).              Unit: kbps. Use VTSS_BITRATE_DISABLED to disable DLB */
+    vtss_burst_level_t ebs;            /**< EBS (Excess Burst Size).          Unit: bytes */
+    vtss_bitrate_t     eir;            /**< EIR (Excess Information Rate).    Unit: kbps. Use VTSS_BITRATE_DISABLED to disable DLB */
 #endif /* VTSS_FEATURE_QOS_EGRESS_SHAPERS_DLB */
 #if defined(VTSS_FEATURE_QOS_EGRESS_SHAPERS_RT)
     vtss_shaper_mode_t mode;           /**< RT (Rate type). Shaper rate type configuration: 0 = Line-rate, 1 = Data-rate */
@@ -355,6 +358,19 @@ typedef struct {
     u8         dwrr_cnt;                                         /**< Number of queues, starting from queue 0, running in DWRR mode */
 #endif /* VTSS_FEATURE_QOS_SCHEDULER_DWRR_CNT */
     vtss_pct_t queue_pct[VTSS_QUEUE_ARRAY_SIZE];                 /**< Queue percentages */
+
+#if defined(VTSS_FEATURE_QOS_OT)
+    BOOL          ot_dwrr_enable;                                /**< Enable DWRR fairness scheduling between OT queues. */
+    u8            ot_dwrr_cnt;                                   /**< Number of OT queues running in DWRR mode. */
+    vtss_pct_t    ot_queue_pct[VTSS_QUEUE_ARRAY_SIZE];           /**< OT Queue percentages */
+    vtss_shaper_t ot_shaper_queue[VTSS_QUEUE_ARRAY_SIZE];        /**< OT egress queue shapers */
+
+    BOOL          ot_it_dwrr_enable;                             /**< Enable DWRR fairness scheduling between OT and IT traffic. */
+    vtss_pct_t    ot_pct;                                        /**< The DWRR OT traffic percentage. Rest is IT traffic. */
+
+    vtss_shaper_t ot_shaper;                                     /**< Egress OT traffic shapers */
+    vtss_shaper_t it_shaper;                                     /**< Egress IT traffic shapers */
+#endif /* VTSS_FEATURE_QOS_OT */
 
 #if defined(VTSS_FEATURE_QCL_DMAC_DIP)
     BOOL       dmac_dip;                                         /**< Enable DMAC/DIP matching in QCLs (default SMAC/SIP) */

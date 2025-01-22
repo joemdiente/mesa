@@ -4,11 +4,13 @@
 #ifndef _MEPA_INDY_PRIVATE_H_
 #define _MEPA_INDY_PRIVATE_H_
 
-#include <unistd.h>
+#include <stdint.h>
 #include <microchip/ethernet/phy/api/types.h>
 #include <microchip/ethernet/phy/api/phy_ts.h>
+#include <microchip/lan8814_cs.h>
 
 #define MEPA_RC(expr) { mesa_rc __rc__ = (expr); if (__rc__ < MESA_RC_OK) return __rc__; }
+#define MEPA_RC_ERR(expr, str) { mesa_rc __rc__ = (expr); if (__rc__ < MESA_RC_OK) {T_E(MEPA_TRACE_GRP_GEN, str); return __rc__; }}
 #define MEPA_ASSERT(x) if((x)) { return MESA_RC_ERROR;}
 
 #define TRUE  1
@@ -29,6 +31,8 @@ mepa_rc indy_direct_reg_rd(mepa_device_t *dev, uint16_t addr, uint16_t *value);
 mepa_rc indy_direct_reg_wr(mepa_device_t *dev, uint16_t addr, uint16_t value, uint16_t mask);
 mepa_rc indy_ext_reg_rd(mepa_device_t *dev, uint16_t page, uint16_t addr, uint16_t *value);
 mepa_rc indy_ext_reg_wr(mepa_device_t *dev, uint16_t page, uint16_t addr, uint16_t value, uint16_t mask);
+mepa_rc indy_ext_incr_reg_rd(mepa_device_t *dev, uint16_t page, uint16_t addr, uint16_t *value, mepa_bool_t start_addr);
+
 mepa_rc indy_mmd_reg_rd(mepa_device_t *dev, uint16_t mmd, uint16_t addr, uint16_t *value);
 mepa_rc indy_mmd_reg_wr(mepa_device_t *dev, uint16_t mmd, uint16_t addr, uint16_t value, uint16_t mask);
 mepa_rc indy_ts_debug_info_dump(struct mepa_device *dev,
@@ -44,6 +48,7 @@ mepa_rc indy_ts_debug_info_dump(struct mepa_device *dev,
 #define EP_RD(dev, page_addr, value) indy_ext_reg_rd(dev, page_addr, value)
 #define EP_WR(dev, page_addr, value) indy_ext_reg_wr(dev, page_addr, value, 0xffff)
 #define EP_WRM(dev, page_addr, value, mask) indy_ext_reg_wr(dev, page_addr, value, mask)
+#define EP_RD_INCR(dev, page_addr, value, start) indy_ext_incr_reg_rd(dev, page_addr, value, start);
 
 //MMD device register access macros
 #define MMD_RD(dev, mmd_addr, value) indy_mmd_reg_rd(dev, mmd_addr, value)
@@ -130,7 +135,11 @@ typedef struct {
     mepa_ts_fifo_read_t           fifo_cb;              // Fifo TS callback
     indy_ts_port_latencies_t      default_latencies;    // Default port latencies
     mepa_ts_pps_conf_t            pps;
+    mepa_bool_t                   tx_auto_followup_ts;
+    mepa_bool_t                   ts_init_done;
+    mepa_ts_tc_op_mode_t          tc_op_mode;           // tc mode for correction field update
 } indy_ts_data_t;
+
 
 typedef struct {
     mepa_bool_t              init_done;
@@ -150,13 +159,18 @@ typedef struct {
     mepa_start_of_frame_conf_t sof_conf;
     mepa_bool_t              framepreempt_en; // Frame Preemption
     mepa_media_mode_t        mdi_mode;
-    uint16_t                 link_up_cnt;
     mepa_bool_t              post_mac_rst;
     mepa_bool_t              aneg_after_link_up;
     mepa_bool_t              crc_workaround;
     indy_ts_data_t           ts_state;
     mepa_phy_prbs_generator_conf_t prbs_conf;
     mepa_bool_t              prbs_init;
+    mepa_phy_eee_conf_t      eee_conf;
+    indy_phy_downshift_t     dsh_conf; //Auto downshift configuration(chip specific)
+    uint8_t                  loop_cnt; //variable to denote no of times status poll getting called by application when MEPA 555 or MEPA 546 occurs.
+    uint8_t                  rep_cnt; //Rate at which application polls a port per sec, for ex: rep_cnt = 10 means 10 times polling will be called per port per sec.
+    mepa_bool_t              dsh_complete; //flag to denote downshift operation completed.
+    mepa_bool_t              aneg_flag; //flag to denote ANEG restart is completed.
 } phy_data_t;
 
 #endif

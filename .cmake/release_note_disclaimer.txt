@@ -9,6 +9,9 @@ Switch architecture name conversion table
 * SparX-5   <=> VSC7546, VSC7549, VSC7552, VSC7556, VSC7558
 * SparX-5i  <=> VSC7546TSN, VSC7549TSN, VSC7552TSN, VSC7556TSN, VSC7558TSN
 * LAN966x   <=> LAN9662, LAN9668
+* LAN969x   <=> LAN9694, LAN9694TSN, LAN9694RED, LAN9691VAO,
+                LAN9696, LAN9696TSN, LAN9696RED, LAN9692VAO,
+                LAN9698, LAN9698TSN, LAN9698RED, LAN9693VAO
 
 PHY architecture name conversion table:
 =======================================
@@ -47,7 +50,47 @@ Aquantia Firmware and API:
 Intel driver for GPY211 version 2.7.1.
 Intel documentation will be delivered by MaxLinear.
 
-General
-=======
 
-This is a bug fix release with no significant new features added.
+Additional configuration options related to PTP/HSR (redbox)
+============================================================
+
+The `mesa_acl_ptp_action_conf_t` and `mesa_ts_operation_mode_t` structures have
+been extended with additional fields to control how PTP frames are processed.
+
+
+Additional MAC-tables configuration to support TC11
+===================================================
+
+The `mesa_learn_mode_t` type has been extended with a `one_shot` and
+`learn_limit` fields. The `one_shot` mode ensures that a learned entry cannot
+move to a different port, and `lean_limit` puts a budget on how many entries can
+be learned on a given port.
+
+Both features are added to support TC11.
+
+
+Support of in-band time-stamping via preamble (PHC)
+===================================================
+
+The `mesa_ts_operation_mode_t` structure has been extended with additional
+fields to support in-band timestamping. This feature requires a PHY supporting
+PCH as well.
+
+
+Support of HSR/Mode U
+=====================
+
+The `mesa_rb_conf_t` structure has been extended with flag to support Mode U.
+
+Mode U enabled means:
+
+If a unicast frame arrives on an LRE port and the DMAC of the frame is in the
+PNT, forward it to the other LRE port (as well as to the interlink port).
+
+If Mode U is disabled, such a frame will only be forwarded to the interlink
+port.
+
+This overcomes issues where it can take up to PNT timeout (60 seconds by
+default) for frames to come through again if certain links are broken.
+
+

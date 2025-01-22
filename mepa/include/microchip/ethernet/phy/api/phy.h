@@ -100,6 +100,77 @@ typedef mepa_rc (*mepa_miim_write_t)(struct mepa_callout_ctx         *ctx,
                                      const uint16_t                   value);
 
 
+/**
+ * \brief SPI  read function
+ *
+ * \param ctx   [IN]  Pointer to a callout structure
+ * \param mmd   [IN]  MMD register.
+ * \param addr  [IN]  Start register address (0-65535).
+ * \param value [OUT] Pointer to a value.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *   MEPA_RC_OK on success.
+ **/
+typedef mepa_rc (*mepa_spi_read_t)(struct mepa_callout_ctx          *ctx,
+                                   const uint8_t                     mmd,
+                                   const uint16_t                    addr,
+                                   uint32_t                         *const value);
+
+/**
+ * \brief SPI  64bit read function
+ *
+ * \param ctx   [IN]  Pointer to a callout structure
+ * \param mmd   [IN]  MMD register.
+ * \param addr  [IN]  Start register address (0-65535).
+ * \param value [OUT] Pointer to a value (64bit).
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *   MEPA_RC_OK on success.
+ **/
+typedef mepa_rc (*mepa_spi_read_64bit_t)(struct mepa_callout_ctx          *ctx,
+                                         const uint8_t                     mmd,
+                                         const uint16_t                    addr,
+                                         uint64_t                         *const value);
+
+
+/**
+ * \brief SPI  write function
+ *
+ * \param ctx   [IN]  Pointer to a callout structure
+ * \param mmd   [IN]  MMD register.
+ * \param addr  [IN]  Start register address (0-65535).
+ * \param value [OUT] Pointer to a value.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *   MEPA_RC_OK on success.
+ **/
+typedef mepa_rc (*mepa_spi_write_t)(struct mepa_callout_ctx          *ctx,
+                                    const uint8_t                     mmd,
+                                    const uint16_t                    addr,
+                                    const uint32_t                    value);
+
+
+/**
+ * \brief SPI  64bit write function
+ *
+ * \param ctx   [IN]  Pointer to a callout structure
+ * \param mmd   [IN]  MMD register.
+ * \param addr  [IN]  Start register address (0-65535).
+ * \param value [OUT] Pointer to a value.(64bit).
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *   MEPA_RC_OK on success.
+ **/
+typedef mepa_rc (*mepa_spi_write_64bit_t)(struct mepa_callout_ctx          *ctx,
+                                          const uint8_t                     mmd,
+                                          const uint16_t                    addr,
+                                          const uint64_t                    value);
+
+
 typedef void (*mepa_trace_func_t)(const mepa_trace_data_t *data, va_list args);
 typedef void *(*mepa_mem_alloc_t)(struct mepa_callout_ctx *ctx, size_t size);
 typedef void (*mepa_mem_free_t)(struct mepa_callout_ctx *ctx, void *ptr);
@@ -115,6 +186,10 @@ extern mepa_trace_func_t MEPA_TRACE_FUNCTION;
 /** \brief PHY synchronisation callbacks passed by application */
 typedef void (*mepa_lock_func_t)(const mepa_lock_t *const lock);
 
+
+
+
+
 /** \brief Address mode that is specific for mchp phy. */
 typedef struct mepa_callout {
     mepa_mmd_read_t        mmd_read;
@@ -122,7 +197,10 @@ typedef struct mepa_callout {
     mepa_mmd_write_t       mmd_write;
     mepa_miim_read_t       miim_read;
     mepa_miim_write_t      miim_write;
-
+    mepa_spi_read_t        spi_read;
+    mepa_spi_write_t       spi_write;
+    mepa_spi_read_64bit_t  spi_read_64bit;
+    mepa_spi_write_64bit_t spi_write_64bit;
     mepa_lock_func_t       lock_enter;
     mepa_lock_func_t       lock_exit;
 
@@ -135,7 +213,7 @@ typedef struct vtss_state_s *vtss_inst_t;
 
 typedef struct mepa_board_conf {
     uint32_t                 numeric_handle;
-
+    uint32_t                 dummy_phy_cap;
     // By default all PHYs in the VTSS library will use default instance located
     // in mepa/vtss/src/vtss.c (as a static variable).
     // This makes it easy for simple usage, but sometime it is desirable to
@@ -593,13 +671,13 @@ mepa_rc mepa_debug_info_dump(struct mepa_device *dev,
  * \param dev  [IN]            Driver instance.
  * \param i2c_mux [IN]         The i2c clock mux
  * \param i2c_reg_addr [IN]    The i2c register address to access.
- * \param i2c_device_addr [IN] The i2c address of the device to access.
- * \param value [OUT]          Pointer to where array which in going to contain the values read.
+ * \param i2c_device_addr [IN] The i2c address of the device to access
+ * \param word_access [IN]     Set to TRUE if the register data width is 16bit. FALSE = 8 bits data width.
  * \param cnt [IN]             The number of registers to read.
  *                             Note: The reg_addr is incremented by 1 for each of the read counts. If you want to read 16 bites registers
  *                             (2 times 8 bits from the same register address), you need to do that by calling the vtss_phy_i2c_read twice,
  *                             and not use the cnt (set cnt to 1).
- * \param word_access [IN]     Set to TRUE if the register data width is 16bit. FALSE = 8 bits data width
+ * \param value [OUT]          Pointer to where array which in going to contain the values read.
  *
  * \return
  *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
@@ -607,12 +685,12 @@ mepa_rc mepa_debug_info_dump(struct mepa_device *dev,
  *   MEPA_RC_OK on success.
  **/
 mepa_rc mepa_i2c_read(mepa_device_t *dev,
-                        const uint8_t i2c_mux,
-                        const uint8_t i2c_reg_addr,
-                        const uint8_t i2c_dev_addr,
-                        uint8_t *const value,
-                        uint8_t cnt,
-                        const mepa_bool_t word_access);
+                      const uint8_t i2c_mux,
+                      const uint8_t i2c_reg_addr,
+                      const uint8_t i2c_dev_addr,
+                      const mepa_bool_t word_access,
+                      uint8_t cnt,
+                      uint8_t *const value);
 
 /**
  *
@@ -622,12 +700,12 @@ mepa_rc mepa_i2c_read(mepa_device_t *dev,
  * \param i2c_mux [IN]         The i2c clock mux
  * \param i2c_reg_addr [IN]    The i2c register address to access.
  * \param i2c_device_addr [IN] The i2c address of the device to access.
- * \param value [IN]           Pointer to where array containing the values to write.
+ * \param word_access [IN]     Set to TRUE if the register data width is 16bit. FALSE = 8 bits data width
  * \param cnt [IN]             The number of registers to write.
  *                             Note: The reg_addr is incremented by 1 for each of the write counts. If you want to write 16 bites registers
  *                             (2 times 8 bits to the same register address), you need to do that by calling the vtss_phy_i2c_write twice,
  *                             and not use the cnt (set cnt to 1).
- * \param word_access [IN]     Set to TRUE if the register data width is 16bit. FALSE = 8 bits data width
+ * \param value [OUT]          Pointer to where array which in going to contain the values read.
  *
  * \return Return code.
  *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
@@ -635,13 +713,27 @@ mepa_rc mepa_i2c_read(mepa_device_t *dev,
  *   MEPA_RC_OK on success.
  **/
 mepa_rc mepa_i2c_write(mepa_device_t *dev,
-                        const uint8_t i2c_mux,
-                        const uint8_t i2c_reg_addr,
-                        const uint8_t i2c_dev_addr,
-                        uint8_t *value,
-                        uint8_t cnt,
-                        const mepa_bool_t word_access);
+                       const uint8_t i2c_mux,
+                       const uint8_t i2c_reg_addr,
+                       const uint8_t i2c_dev_addr,
+                       const mepa_bool_t word_access,
+                       uint8_t cnt,
+                       const uint8_t *value);
 
+/**
+ *
+ * \brief I2C clock frequency select
+ *
+ * \param dev  [IN]            Driver instance.
+ * \param clk_value [IN]       Pointer to where array containing the clock frequency values to write.
+ *
+ * \return Return code.
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *   MEPA_RC_ERROR on Error \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_i2c_clock_select(mepa_device_t *dev,
+                              mepa_i2c_clk_select_t const *clk_value);
 
 /**
  * \brief PHY get SQI value
@@ -656,8 +748,110 @@ mepa_rc mepa_i2c_write(mepa_device_t *dev,
 mepa_rc mepa_sqi_read(struct mepa_device *dev, uint32_t *const value);
 
 /**
- * \brief PHY write SOF value
+ * \Far-End Fault Indication (FEFI) in supported in 100BaseFX mode and supports FEFI generation and detection per
+ * \IEEE 802.3-2005 clause 24.3.2.5 and 24.3.2.6 in and supports BASEFX. In 100FX, ANEG isn't defined by Std.
+ * \FEFI enables stations on both ends of a pair of fibers to be informed when there is a problem with one of the fibers.
+ * \Without this capability, it is impossible for a fiber interface to detect a problem that affects only its transmit fiber
+**/
+
+/**
+ * \brief Set FEFI configuration
  *
+ * \param dev   [IN]   Driver instance.
+ * \param fefi_conf   [IN]   FEFI mode as input.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_fefi_set(struct mepa_device *dev,
+                       const mepa_fefi_mode_t *fefi_conf);
+
+/**
+ * \brief Get FEFI configuration
+ *
+ * \param dev   [IN]   Driver instance.
+ * \param fefi_conf   [OUT]   FEFI mode as output.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_fefi_get(struct mepa_device *dev,
+                       mepa_fefi_mode_t *const fefi_conf);
+
+/**
+ * \brief FEFI detection
+ *
+ * \param dev   [IN]   Driver instance.
+ * \param fefi_detect   [OUT]   A BOOL value which is true when FEFI is detected.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_fefi_detect(struct mepa_device *dev,
+                          mepa_bool_t *const fefi_detect);
+
+/**
+ *  \brief Read Chip temperature API for supported PHYs.
+ *  \The temperature of the chip is obtained in degree celsius.
+ *
+ *  \param dev     [IN]    Driver instance.
+ *  \temp          [OUT]   Stored chip temperature value.
+ *
+ *  \return
+ *    MEPA_RC_NOT_IMPLEMENTED when not supported.\n
+ *    MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_chip_temp_get(struct mepa_device *dev, int16_t *const temp);
+
+/**
+ * \The energy efficient ethernet (EEE) helps in reducing the power consumption on physical layer devices. Configuring
+ * \these EEE on interfaces includes enabling EEE on Base-T copper ethernet port based on the power utilization and
+ * \also verifying if EEE is saving energy on the configured ports.
+ **/
+
+/**
+ * \breif Set EEE Configuration
+ *
+ * \param dev          [IN]   Driver instance.
+ * \param conf         [IN]   EEE configuration.
+ *
+ * \return Return code.
+ *   MEPA_RC_ERROR on Error \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_eee_mode_conf_set(struct mepa_device *dev, const mepa_phy_eee_conf_t conf);
+
+/**
+ * \breif Get current EEE Configuration
+ *
+ * \param dev          [IN]   Driver instance.
+ * \param conf         [OUT]  EEE configuration.
+ *
+ * \return Return code.
+ *   MEPA_RC_ERROR on Error \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_eee_mode_conf_get(struct mepa_device *dev, mepa_phy_eee_conf_t *const conf);
+
+/*
+ * \breif Get current status of EEE
+ *
+ * \param dev                    [IN]    Driver instance.
+ * \param advertisement          [OUT]   Advertisement of EEE Link Partner
+ * \param rx_in_power_save_state [OUT]   Rx Part of PHY is in power save mode
+ * \param tx_in_power_save_state [OUT]   Tx Part of PHY is in power save mode
+ *
+ * \return Return code.
+ *   MEPA_RC_ERROR on Error \n
+ *   MEPA_RC_OK on success.
+ **/
+mepa_rc mepa_eee_status_get(struct mepa_device *dev, uint8_t *const advertisement, mepa_bool_t *const rx_in_power_save_state, mepa_bool_t *const tx_in_power_save_state);
+
+/**
+ * \brief PHY write SOF value
  * \param dev   [IN]   Driver instance.
  * \param conf [IN]   SOF value to be Configured
  *
@@ -762,6 +956,57 @@ mepa_rc mepa_prbs_monitor_set(struct mepa_device *dev, mepa_phy_prbs_monitor_con
  *   MEPA_RC_OK on success.
  **/
 mepa_rc mepa_prbs_monitor_get(struct mepa_device *dev, mepa_phy_prbs_monitor_conf_t *const value);
+
+/**
+ * \brief To get phy capability
+ *
+ * \param dev            [IN]  Driver instance.
+ * \param capability     [IN]  Capability information
+ *
+ * \return
+ *   Required capability of the PHY based on phy id.
+ **/
+
+uint32_t mepa_capability(struct mepa_device *dev , uint32_t capability);
+
+/**
+ * \brief To End  Warm restart configuration
+ *
+ * \param dev        [IN]  Driver instance.
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+
+mepa_rc mepa_warmstart_conf_end(struct mepa_device *dev);
+
+/**
+ * \brief To Get  Warm restart configuration
+ *
+ * \param dev        [IN]  Driver instance.
+ * \param restrt     [OUT] warmstart status
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+
+mepa_rc mepa_warmstart_conf_get(struct mepa_device *dev, mepa_restart_t *const restart);
+
+
+/**
+ * \brief Set PHY for warm restart
+ *
+ * \param dev        [IN]  Driver instance.
+ * \param restrt     [IN] warmstart status
+ *
+ * \return
+ *   MEPA_RC_NOT_IMPLEMENTED when not supported. \n
+ *   MEPA_RC_OK on success.
+ **/
+
+mepa_rc mepa_warmstart_conf_set(struct mepa_device *dev, const mepa_restart_t restart);
 
 #include <microchip/ethernet/hdr_end.h>
 #endif

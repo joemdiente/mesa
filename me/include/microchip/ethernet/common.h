@@ -58,7 +58,10 @@ typedef enum {
     MESA_PHY_MEDIA_IF_AMS_FI_100FX,
     MESA_PHY_MEDIA_IF_T1S_10FX,                /**< 10Base-T1S */
     MESA_PHY_MEDIA_IF_T1_100FX,                /**< 100Base-T1 */
-    MESA_PHY_MEDIA_IF_T1_1000FX                /**< 1000Base-T1 */
+    MESA_PHY_MEDIA_IF_T1_1000FX,                /**< 1000Base-T1 */
+    MESA_PHY_MEDIA_IF_FI_10G_1G_LAN,           /**< 10G PHY 1G-LAN */
+    MESA_PHY_MEDIA_IF_FI_10G_LAN,              /**< 10G PHY 10G-LAN */
+    MESA_PHY_MEDIA_IF_FI_10G_WAN               /**< 10G PHY WAN */
 } mesa_phy_media_interface_t;
 
 /** \brief PHY media interface type */
@@ -176,7 +179,7 @@ typedef enum
     MESA_PORT_INTERFACE_SPI4,          // SPI4
     MESA_PORT_INTERFACE_QSGMII,        // QSGMII
     MESA_PORT_INTERFACE_SFI,           // SFI/LAN
-    MESA_PORT_INTERFACE_SXGMII,        // 1x10G or 1x5G device.    Uses primary device. 64B/66B PCS */
+    MESA_PORT_INTERFACE_USXGMII,       // 1x10G and below. Uses primary device. 64B/66B PCS. Laguna only */
     MESA_PORT_INTERFACE_USGMII,        // 8x2G5 devices. Mode 'X'. Uses 2G5 device.     */
     MESA_PORT_INTERFACE_QXGMII,        // 4x2G5 devices. Mode 'R'. Uses 2G5 device.     */
     MESA_PORT_INTERFACE_DXGMII_5G,     // 2x2G5 devices. Mode 'F'. Uses 2G5 device.     */
@@ -449,7 +452,7 @@ enum
     MESA_RC_ERR_PCS_BLOCK_NOT_SUPPORTED         = -300, // Invalid access to PCS block
 
     // PoE ERRORS
-    MESA_RC_ERR_POE_FIRMWARE_VER_NOT_NEW        = -400, // The version of loaded firmware is identical to new
+    MESA_RC_ERR_POE_FIRMWARE_IS_UP_TO_DATE      = -400, // The version of loaded firmware is identical to new
     MESA_RC_ERR_POE_RX_BUF_EMPTY                = -401, // poe rx buffer empty - data 0x00
     MESA_RC_ERR_POE_FIRM_UPDATE_NEEDED          = -402, // poe firmware update error
     MESA_RC_ERR_POE_COMM_PROT_ERR               = -403, // poe rx communication protocol error

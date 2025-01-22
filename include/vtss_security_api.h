@@ -200,7 +200,7 @@ typedef enum
 {
     VTSS_ACL_PTP_ACTION_NONE,                 /**< No PTP action */
     VTSS_ACL_PTP_ACTION_ONE_STEP,             /**< PTP one-step time-stamping */
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     VTSS_ACL_PTP_ACTION_ONE_STEP_ADD_DELAY,   /**< PTP one-step time-stamping, Serval: add delay, Jr2: Add EDLY */
     VTSS_ACL_PTP_ACTION_ONE_STEP_SUB_DELAY_1, /**< PTP one-step time-stamping, Serval: subtract delay 1, Jr2: Add IDLY1 */
     VTSS_ACL_PTP_ACTION_ONE_STEP_SUB_DELAY_2, /**< PTP one-step time-stamping, Serval: subtract delay 2, Jr2: Add IDLY2 */
@@ -211,7 +211,7 @@ typedef enum
     VTSS_ACL_PTP_ACTION_TWO_STEP              /**< PTP two-step time-stamping */
 } vtss_acl_ptp_action_t;
 
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
 /** \brief ACL Source IP index. For IPv6 entries, it must be divisible by 4 and consumes 4 rules **/
 typedef u8 vtss_acl_sip_idx_t;
 
@@ -241,7 +241,10 @@ typedef enum {
     VTSS_ACL_ADDR_UPDATE_MAC_SWAP,         /**< Swap SMAC and DMAC */
     VTSS_ACL_ADDR_UPDATE_DMAC_REPLACE,     /**< Replace DMAC */
     VTSS_ACL_ADDR_UPDATE_DMAC_REPLACE_MSB, /**< Replace 40 MSB of DMAC */
-    VTSS_ACL_ADDR_UPDATE_MAC_IP_SWAP_UC    /**< Swap MAC addresses if DMAC is unicast. Replace SMAC if DMAC is multicast. Same for SIP/DIP */
+    VTSS_ACL_ADDR_UPDATE_MAC_IP_SWAP_UC,   /**< Swap MAC addresses if DMAC is unicast. Replace SMAC if DMAC is multicast. Same for SIP/DIP */
+    VTSS_ACL_ADDR_UPDATE_IGR_MAC_SWAP,              /**< Ingress: Swap SMAC and DMAC */
+    VTSS_ACL_ADDR_UPDATE_IGR_DMAC_SMAC_INCR,        /**< Ingress: Increment DMAC and SMAC */
+    VTSS_ACL_ADDR_UPDATE_IGR_DMAC_INCR_SMAC_REPLACE /**< Ingress: Increment DMAC, replace SMAC */
 } vtss_acl_addr_update_t;
 
 /** \brief ACL address action configuration */
@@ -252,7 +255,7 @@ typedef struct {
 } vtss_acl_addr_action_t;
 #endif
 
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
 /** \brief ACL PTP response action */
 typedef enum
 {
@@ -261,15 +264,23 @@ typedef enum
     VTSS_ACL_PTP_RSP_DLY_REQ_RSP_NO_TS   /**< Auto response to Delay_Req, exludes receiveTimestamp update */
 } vtss_acl_ptp_rsp_t;
 
+/** \brief ACL PTP RedBox forwarding */
+typedef struct {
+    BOOL enable; // Enable processing
+    BOOL srcid;  // SourcePortIdentity forwarding
+    BOOL reqid;  // RequestingPortIdentity forwarding
+} vtss_acl_ptp_rb_fwd_t;
+
 /** \brief ACL PTP action configuration */
 typedef struct {
-    vtss_acl_ptp_rsp_t response;             /**< PTP Delay_Req/Response action */
-    i8                 log_message_interval; /**< PTP logMessageInterval [-8,7] returned in the Delay_Resp message */
-    BOOL               copy_smac_to_dmac;    /**< PTP DMAC operation */
-    BOOL               set_smac_to_port_mac; /**< PTP SMAC operation */
-    u8                 dom_sel;              /**< PTP domain selector. PTP_DOM_SEL indexes the PTP configuration */
-    vtss_udp_tcp_t     sport;                /**< UDP source port */
-    vtss_udp_tcp_t     dport;                /**< UDP destination port */
+    vtss_acl_ptp_rsp_t    response;             /**< PTP Delay_Req/Response action */
+    i8                    log_message_interval; /**< PTP logMessageInterval [-8,7] returned in the Delay_Resp message */
+    BOOL                  copy_smac_to_dmac;    /**< PTP DMAC operation */
+    BOOL                  set_smac_to_port_mac; /**< PTP SMAC operation */
+    u8                    dom_sel;              /**< PTP domain selector. PTP_DOM_SEL indexes the PTP configuration */
+    vtss_udp_tcp_t        sport;                /**< UDP source port */
+    vtss_udp_tcp_t        dport;                /**< UDP destination port */
+    vtss_acl_ptp_rb_fwd_t rb_fwd;               /**< RedBox forwarding */
 } vtss_acl_ptp_action_conf_t;
 #endif
 
@@ -291,16 +302,16 @@ typedef struct
     BOOL                       port_list[VTSS_PORT_ARRAY_SIZE]; /**< Egress port list */
     BOOL                       mirror;         /**< Enable mirroring */
     vtss_acl_ptp_action_t      ptp_action;     /**< PTP action */
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     vtss_acl_ptp_action_conf_t ptp;            /**< PTP configuration */
 #endif
-#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5)
+#if defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN969X)
     vtss_acl_addr_action_t     addr;           /**< Address update configuration */
 #endif
 #if defined(VTSS_ARCH_OCELOT)
     BOOL                       lm_cnt_disable; /**< Disable OAM LM Tx counting */
 #endif /* VTSS_ARCH_OCELOT */
-#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X)
+#if defined(VTSS_ARCH_OCELOT) || defined(VTSS_ARCH_JAGUAR_2) || defined(VTSS_ARCH_SPARX5) || defined(VTSS_ARCH_LAN966X) || defined(VTSS_ARCH_LAN969X)
     BOOL                       mac_swap;       /**< Swap SMAC and DMAC */
     BOOL                       ifh_flag;       /**< Control one target specific bit in IFH */
 #endif
@@ -315,9 +326,12 @@ typedef enum {
 
 // ACL key generation for ARP/IPv4/IPv6 frames
 typedef struct {
-    vtss_acl_key_t arp;  // ARP frame key
-    vtss_acl_key_t ipv4; // IPv4 frame key
-    vtss_acl_key_t ipv6; // IPv6 frame key
+#if defined(VTSS_FEATURE_ACL_EXT_ETYPE)
+    vtss_acl_key_t etype; // ETYPE/LLC/SNAP frame key
+#endif
+    vtss_acl_key_t arp;   // ARP frame key
+    vtss_acl_key_t ipv4;  // IPv4 frame key
+    vtss_acl_key_t ipv6;  // IPv6 frame key
 } vtss_acl_frame_key_t;
 
 /** \brief ACL port configuration */
@@ -496,6 +510,9 @@ typedef struct
 /** \brief Frame data for VTSS_ACE_TYPE_ARP */
 typedef struct                                 
 {                                      
+#if defined(VTSS_FEATURE_ACL_EXT_ETYPE)
+    vtss_ace_u48_t dmac;       // DMAC, VTSS_ACL_KEY_EXT
+#endif
     vtss_ace_u48_t smac;       /**< SMAC */
     vtss_ace_bit_t arp;        /**< Opcode ARP/RARP */
     vtss_ace_bit_t req;        /**< Opcode request/reply */

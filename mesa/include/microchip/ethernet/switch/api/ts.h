@@ -16,6 +16,23 @@
 #include <microchip/ethernet/switch/api/security.h>
 #include <microchip/ethernet/hdr_start.h>  // ALL INCLUDE ABOVE THIS LINE
 
+// TS global configuration
+typedef struct {
+    // PTP domain number [0..MESA_CAP_TS_DOMAIN_CNT-1]
+    // This is the PTP (TOD) domain for TSN features:
+    // TAS - PRFP - RTE
+    uint8_t  tsn_domain;
+} mesa_ts_conf_t CAP(TS);
+
+// TSN global configuration
+mesa_rc mesa_ts_conf_set(const mesa_inst_t           inst,
+                         const mesa_ts_conf_t *const conf)
+    CAP(TS);
+
+mesa_rc mesa_ts_conf_get(const mesa_inst_t        inst,
+                         mesa_ts_conf_t    *const conf)
+    CAP(TS);
+
 /** \brief This is the max time offset adjustment that os done without setting ports in disabled state */
 #define MESA_HW_TIME_MAX_FINE_ADJ   25
 
@@ -211,6 +228,23 @@ mesa_rc mesa_ts_domain_timeofday_get(const mesa_inst_t inst,
                                      const uint32_t    domain,
                                      mesa_timestamp_t  *const ts,
                                      uint64_t          *const tc)
+    CAP(TS);
+
+/**
+ * \brief Get the current time in timestamp format from multiple domains simultanesouly
+ *        at same instance of time. This will be useful in comparing two different clocks.
+ * \param inst       [IN]   handle to an API instance.
+ * \param domain_cnt [IN]   Number of supported clock domains from which timestamps must be read.
+ * \param ts         [OUT]  Array containing timestamps from each clock domain at the time of execution.
+ *                          Timestamps are read starting from clock domain 0.
+ * Architecture:
+ *  Same as mesa_ts_timeofday_get but involves multiple domains.
+ *
+ * \return Return code.
+ */
+mesa_rc mesa_ts_multi_domain_timeofday_get(const mesa_inst_t inst,
+                                           const uint32_t    domain_cnt,
+                                           mesa_timestamp_t  *const ts)
     CAP(TS);
 
 /**
@@ -421,6 +455,7 @@ typedef struct mesa_ts_ext_clock_mode_t {
     mesa_bool_t                       enable;        /**< True: Select clock generation on external output pin with frequency 'freq'
                                                           False: Select 1PPS on external input/output pins as indicated in 'one_pps_mode' */
     uint32_t                          freq;          /**< clock output frequency (hz [1..25.000.000]) when 'enable' == True. */
+    uint32_t                          domain;        /**< clock domain in multi domain chip (0..2). */
 } mesa_ts_ext_clock_mode_t CAP(TS);
 
 
@@ -665,10 +700,37 @@ typedef enum  {
     MESA_TX_MODE_MAX
 } mesa_ts_mode_t CAP(TS);
 
+typedef enum {
+    MESA_TS_PCH_TX_MODE_NONE,                    /**< No PCH in transmitted frames */
+    MESA_TS_PCH_TX_MODE_ENCRYPT_NONE,            /**< PCH added on transmitted frames */
+    MESA_TS_PCH_TX_MODE_ENCRYPT_BIT,             /**< PCH added with encryption bit set */
+    MESA_TS_PCH_TX_MODE_ENCRYPT_BIT_INVERT_SMAC, /**< PCH added with encryption bit set to inverted SMAC(40), which is then cleared.#xD */
+} mesa_ts_pch_tx_mode_t CAP(PCH);
+
+/**< Set mode for ingress timestamps, in terms of nsec.subns bit widths */
+typedef enum {
+    MESA_TS_PCH_RX_MODE_NONE,  /**< No PCH expected */
+    MESA_TS_PCH_RX_MODE_32_0,  /**< 32.0 mode */
+    MESA_TS_PCH_RX_MODE_28_4,  /**< 28.4 mode */
+    MESA_TS_PCH_RX_MODE_24_8,  /**< 24.8 mode */
+    MESA_TS_PCH_RX_MODE_16_16, /**< 16.16 mode */
+} mesa_ts_pch_rx_mode_t CAP(PCH);
+
+// RedBox discard mode for frames towards non-RedBox port
+typedef enum {
+    MESA_TS_RB_DISCARD_NONE, // No PRP role
+    MESA_TS_RB_DISCARD_A,    // Discard timing flow from port A
+    MESA_TS_RB_DISCARD_B,    // Discard timing flow from port B
+} mesa_ts_rb_discard_t;
+
 /** \brief Timestamp operation */
 typedef struct mesa_ts_operation_mode_t {
-    mesa_ts_mode_t mode;   /**< Hardware Timestamping mode for a port(EXTERNAL or INTERNAL) */
-    uint32_t       domain; /**< Hardware timestamping domain for a port */
+    mesa_ts_mode_t        mode;        /**< Hardware Timestamping mode for a port(EXTERNAL or INTERNAL) */
+    uint32_t              domain;      /**< Hardware timestamping domain for a port */
+    mesa_ts_pch_tx_mode_t tx_pch_mode CAP(PCH); /**< PCH TX mode */
+    mesa_ts_pch_rx_mode_t rx_pch_mode CAP(PCH); /**< PCH RX mode */
+    uint32_t              pch_port_id CAP(PCH); /**< PCH sub-portID. */
+    mesa_ts_rb_discard_t  rb_discard;  // RedBox discard mode
 } mesa_ts_operation_mode_t CAP(TS);
 
 

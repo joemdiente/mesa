@@ -5,14 +5,17 @@
 
 require_relative 'libeasy/et'
 require_relative 'ts_lib'
-require 'pry'
 
 $ts = get_test_setup("mesa_pc_b2b_2x", {}, "", "loop")
 
 check_capabilities do
     $cap_family = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_CHIP_FAMILY")
-    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) || ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")),
-           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5). or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x).")
+    assert(($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")) ||
+           ($cap_family == chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")),
+           "Family is #{$cap_family} - must be #{chip_family_to_id("MESA_CHIP_FAMILY_JAGUAR2")} (Jaguar2) or #{chip_family_to_id("MESA_CHIP_FAMILY_SPARX5")} (SparX-5) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN966X")} (Lan966x) or #{chip_family_to_id("MESA_CHIP_FAMILY_LAN969X")} (Lan969x)")
+    $cap_fpga = $ts.dut.call("mesa_capability", "MESA_CAP_MISC_FPGA")
     $cap_epid = $ts.dut.call("mesa_capability", "MESA_CAP_PACKET_IFH_EPID")
     $cap_port_cnt = $ts.dut.call("mesa_capability", "MESA_CAP_PORT_CNT")
     loop_pair_check
@@ -67,8 +70,9 @@ def tod_tx_fifo_test
         t_e("Not the expected TX timestamp. ts_tx[id] = #{ts_tx["id"]}  idx[ts_id] = #{idx["ts_id"]}  ts_tx[ts_valid] = #{ts_tx["ts_valid"]}")
     end
 
+    diff = 1000
     t_i ("difference between RX and TX timestamp  #{($frame_info["hw_tstamp"] - ts_tx["ts"])>>16}")
-    if (($frame_info["hw_tstamp"] - ts_tx["ts"]) > (1000<<16))    #Experimental value of max 1000 ns difference between transmitting TC and received TC
+    if (($frame_info["hw_tstamp"] - ts_tx["ts"]) > (diff<<16))    #Experimental value of max diff ns difference between transmitting TC and received TC
         t_e("Not the expected difference between RX and TX timestamp. ts_tx[ts] = #{ts_tx["ts"]}  $frame_info[hw_tstamp] = #{$frame_info["hw_tstamp"]}  diff = #{($frame_info["hw_tstamp"] - ts_tx["ts"])>>16}")
     end
 

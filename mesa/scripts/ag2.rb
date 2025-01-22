@@ -92,6 +92,12 @@ $methods = {}
 
 $methods_impl_no_auto = []
 
+$struct_blacklist = [
+    "vtss_phy_init_conf_t",
+    "vtss_phy_10g_pkt_gen_conf_t",
+    "mepa_phy_cap_t",
+]
+
 $methods_blacklist = [
     "mesa_callout_trace_hex_dump",
     "mesa_callout_trace_printf",
@@ -115,7 +121,21 @@ $methods_blacklist = [
     "meba_phy_macsec_dbg_fcb_block_reg_dump",
     "meba_phy_macsec_dbg_reconfig",
     "meba_phy_macsec_dbg_reg_dump",
+    "meba_phy_ts_fifo_read_install",
+    "meba_ts_test_config",
     "meba_phy_macsec_dbg_frm_match_handling_ctrl_reg_dump",
+    "meba_phy_ts_fifo_get",
+    "meba_phy_macsec_frame_get",
+    "meba_phy_macsec_inst_count_get",
+    "vtss_phy_inst_create",
+    "vtss_phy_inst_destroy",
+    "vtss_phy_init_conf_set",
+    "vtss_phy_patch_setttings_get",
+    "vtss_phy_sd6g_csr_reg_rd_dbg",
+    "vtss_phy_epg_gen_kat_frame",
+    "vtss_phy_init_conf_get",
+    "vtss_phy_10g_get_user_data",
+    "vtss_phy_10g_pkt_gen_conf",
 ]
 
 $methods_greylist = [
@@ -936,7 +956,6 @@ $options[:input_files].each do |x|
         next if x == "./mesa/include/microchip/ethernet/hdr_end.h"
         next if x == "./mesa/include/microchip/ethernet/hdr_start.h"
         next if x == "./mesa/include/microchip/ethernet/switch/api/port_list.h"
-        next if /vtss/ =~ x
         next if not (/.*\.h$/ =~ x)
 
         o_dir = "#{$options[:output_dir]}/#{File.dirname(x)}"
@@ -944,7 +963,7 @@ $options[:input_files].each do |x|
 
         ast = nil
         cache_file = "#{$options[:output_dir]}/#{x}.cache"
-        if File.exists?(cache_file) and File.mtime(cache_file) > File.mtime(x)
+        if File.exist?(cache_file) and File.mtime(cache_file) > File.mtime(x)
             trace "Loading cache #{cache_file}"
             File.open(cache_file, "r"){|f| ast = Marshal.load(f)}
 
@@ -978,7 +997,7 @@ $tl_implemented = []
 
 def skip_inst(a)
     str = a[:type_base]
-    skip = (str == "mesa_inst_t" or str == "meba_inst_t")
+    skip = (str == "mesa_inst_t" or str == "meba_inst_t" or str == "vtss_inst_t")
 end
 
 $methods.each do |m, o|
@@ -1087,34 +1106,34 @@ $el.each do |e|
     $c_src.puts "    MESA_RC(json_rpc_get_name_json_string(req, obj, name, &str)); /* #{__LINE__} */"
     $c_src.puts "    MESA_RC(json_rpc_enum_name_#{x[:type_name]}(req, str, parm)); /* #{__LINE__} */"
     end_func
-
-    $c_src.puts "// Convert enumeration to string"
-    add_func "const char *json_rpc_string_#{x[:type_name]}(#{x[:type_name]} *parm) /* #{__LINE__} */"
-    $c_src.puts "    return ("
-    n_def = nil
-    x[:members].each do |e|
-        n = e[:enum_name]
-        $c_src.puts "            *parm == #{n} ? \"#{n}\" :"
-        if n_def.nil?
-            n_def = n
+    if (x[:type_name] != "mepa_phy_cap_t" )
+        $c_src.puts "// Convert enumeration to string"
+        add_func "const char *json_rpc_string_#{x[:type_name]}(#{x[:type_name]} *parm) /* #{__LINE__} */"
+        $c_src.puts "    return ("
+        n_def = nil
+        x[:members].each do |e|
+            n = e[:enum_name]
+            $c_src.puts "            *parm == #{n} ? \"#{n}\" :"
+            if n_def.nil?
+                n_def = n
+            end
         end
+        $c_src.puts "            \"#{n_def}\");"
+        $c_src.puts "}"
+        $c_src.puts ""
+        $c_src.puts "// Add enumeration to array"
+        add_func "mesa_rc json_rpc_add_#{x[:type_name]}(json_rpc_req_t *req, json_object *obj, #{x[:type_name]} *parm) /* #{__LINE__} */"
+        $c_src.puts "    return json_rpc_add_json_string(req, obj, json_rpc_string_#{x[:type_name]}(parm));"
+        $c_src.puts "}"
+        $c_src.puts ""
+
+        $c_src.puts "// Add enumeration to object"
+        add_func "mesa_rc json_rpc_add_name_#{x[:type_name]}(json_rpc_req_t *req, json_object *obj, const char *name, #{x[:type_name]} *parm) /* #{__LINE__} */"
+        $c_src.puts "    return json_rpc_add_name_json_string(req, obj, name, json_rpc_string_#{x[:type_name]}(parm));"
+        $c_src.puts "}"
+        $c_src.puts ""
+        $c_hdr.puts ""
     end
-    $c_src.puts "            \"#{n_def}\");"
-    $c_src.puts "}"
-    $c_src.puts ""
-
-    $c_src.puts "// Add enumeration to array"
-    add_func "mesa_rc json_rpc_add_#{x[:type_name]}(json_rpc_req_t *req, json_object *obj, #{x[:type_name]} *parm) /* #{__LINE__} */"
-    $c_src.puts "    return json_rpc_add_json_string(req, obj, json_rpc_string_#{x[:type_name]}(parm));"
-    $c_src.puts "}"
-    $c_src.puts ""
-
-    $c_src.puts "// Add enumeration to object"
-    add_func "mesa_rc json_rpc_add_name_#{x[:type_name]}(json_rpc_req_t *req, json_object *obj, const char *name, #{x[:type_name]} *parm) /* #{__LINE__} */"
-    $c_src.puts "    return json_rpc_add_name_json_string(req, obj, name, json_rpc_string_#{x[:type_name]}(parm));"
-    $c_src.puts "}"
-    $c_src.puts ""
-    $c_hdr.puts ""
 end
 
 def member_array m
@@ -1226,6 +1245,7 @@ end
 $sl.uniq!
 $sl.each do |s|
     x = type_resolve_type s
+    next if ($struct_blacklist.include? s)
     #pp x
     #pp x if s.include? "auto"
     $c_src.puts "// Get struct"
@@ -1369,7 +1389,7 @@ $methods.each do |m, o|
             aa.each do |a|
                 $c_src.print ", " if a != aa.first
                 str = a[:type_base]
-                if str == "mesa_inst_t"
+                if str == "mesa_inst_t" or str == "vtss_inst_t"
                     $c_src.print "NULL"
                 elsif str == "meba_inst_t"
                     $c_src.print "meba_global_inst"

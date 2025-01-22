@@ -23,6 +23,7 @@
 #define INDY_EXT_PAGE_29 29
 #define INDY_EXT_PAGE_31 31
 
+#define INDY_MMD_3      3
 #define INDY_MMD_7      7
 // Direct registers
 
@@ -106,9 +107,15 @@
 #define INDY_X_CABLE_DIAG_STATUS(x)  INDY_EXTRACT_BITFIELD(x, 8, 2)
 #define INDY_X_CABLE_DIAG_DATA(x)    INDY_EXTRACT_BITFIELD(x, 0, 8)
 
+// Register - 20
+#define INDY_DIGITAL_AX_AN_STATUS 20
+#define INDY_F_SIG_DET INDY_BIT(13)
+#define INDY_F_LINK_DET INDY_BIT(14)
+
 // Register - 22
 #define INDY_EXT_PAGE_ACCESS_CTRL 22
 #define INDY_F_EXT_PAGE_ACCESS_CTRL_EP_FUNC 0x4000
+#define INDY_F_EXT_PAGE_ACCESS_CTRL_INCR_RD_WR 0x8000
 
 #define INDY_EXT_PAGE_ACCESS_ADDR_DATA 23
 
@@ -133,6 +140,12 @@
 // Register - 30 .... Reserved register for applying connector loopback
 #define INDY_RESV_CON_LOOP 30
 #define INDY_F_EXT_LPBK INDY_BIT(3)
+
+// Register - 31 (control register)
+#define INDY_CONTROL       31
+#define INDY_F_CONTROL_SOFT_RESET INDY_BIT(1)
+#define INDY_F_1000T_SPEED_STATUS INDY_BIT(6)
+#define INDY_F_CONTROL_RESERVED INDY_BIT(14)
 
 //====================================================================================
 //      Extended Page 0
@@ -390,11 +403,22 @@
 #define INDY_CLOCK_MANAGEMENT_MODE_5 INDY_EXT_PAGE_31, 13
 
 //====================================================================================
+//      MMD 3
+//====================================================================================
+// Register 1
+#define INDY_EEE_PCS_STATUS INDY_MMD_3, 1
+
+//====================================================================================
 //      MMD 7
 //====================================================================================
+// Register 60
+#define INDY_EEE_ADVERTISEMENT INDY_MMD_7, 60
+#define INDY_EEE_100_BT  INDY_BIT(1)
+#define INDY_EEE_1000_BT INDY_BIT(2)
+
 // Register 61
 #define INDY_LINK_PARTNER_EEE_ABILITY INDY_MMD_7, 61
-#define INDY_F_LP_EEE_ABILITY_100_BT INDY_BIT(1)
+#define INDY_F_LP_EEE_ABILITY_100_BT  INDY_BIT(1)
 #define INDY_F_LP_EEE_ABILITY_1000_BT INDY_BIT(2)
 
 #endif

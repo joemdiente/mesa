@@ -38,11 +38,12 @@ if $ws.nil? or $api.nil? or $appl.nil?
     exit 1
 end
 
-if File.exists? $ws
+if File.exist? $ws
     puts "Work-space exists already, please provide a non-existing works space path"
     exit 1
 end
 
+$top = File.dirname(File.dirname(File.expand_path(__FILE__)))
 $ws = File.expand_path($ws)
 $api = File.expand_path($api)
 if $out_folder
@@ -52,7 +53,7 @@ end
 %x{mkdir -p #{$ws}}
 Dir.chdir($ws)
 
-$l = Logger.new("| tee #{$ws}/build.log")
+$l = Logger.new(IO.popen(["tee", "#{$ws}/build.log"], "wb"))
 $l.level = Logger::INFO
 log_fmt = proc do |severity, datetime, progname, msg|
     "#{severity} [#{Time.now.strftime('%H:%M:%S')}]: #{msg}\n"
@@ -81,7 +82,7 @@ end
 
 $l.info run "hostname"
 $l.info run "whoami"
-run "sudo /usr/local/bin/mscc-download-pkg -t webstax2 #{$appl}"
+run "sudo #{$top}/.cmake/mscc-download-pkg -t webstax2 #{$appl}"
 run "tar -xzf /opt/mscc/webstax2/#{$appl}  --strip-components=2"
 run "rm -rf vtss_api"
 run "mkdir vtss_api"
