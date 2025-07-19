@@ -14,6 +14,8 @@
  #include <vtss_os_ecos.h>
 #elif defined(VTSS_OPSYS_LINUX)
  #include <vtss_os_linux.h>
+#elif defined(VTSS_OPSYS_WIN32)
+ #include <vtss_os_win32.h>
 #elif defined(VTSS_OS_CUSTOM)
  #include <vtss_os_custom.h>
 #else

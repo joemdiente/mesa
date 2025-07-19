@@ -24,7 +24,9 @@
 #include "vtss_port_api.h"
 #include "vtss_appl_10g_phy_malibu.h" // For board init
 #include "../base/ail/vtss_state.h" // For AIL dumping function
+#ifndef MALIBU_MCP2210
 #include <netdb.h>  // For socket
+#endif
 #include <stdarg.h> // For va_list
 
 #ifdef _INCLUDE_DEBUG_FILE_PRINT_

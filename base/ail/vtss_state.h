@@ -750,7 +750,8 @@ typedef struct vtss_state_s {
     int  txt_buf_index; /* Index to text buffer */
 #if defined(VTSS_CHIP_10G_PHY) || defined(VTSS_FEATURE_MACSEC)
     ioreg_blk io_var;   /* temporary structures used in register read/write in phys */
-#endif
+    ioreg_blk mal_io_var;   /* temporary structures used in Malibu register read/write in phys */
+    #endif
     void *app_data;    /**< Application data pointer */
 } vtss_state_t;
 

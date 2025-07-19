@@ -1,6 +1,9 @@
 // Copyright (c) 2004-2020 Microchip Technology Inc. and its subsidiaries.
 // SPDX-License-Identifier: MIT
 
+#ifndef _VTSS_VENICE_C_INC
+#define _VTSS_VENICE_C_INC
+
 #include "vtss_api.h"
 #include "../../ail/vtss_state.h"
 #include "../../ail/vtss_common.h"
@@ -12,12 +15,12 @@
 #include "vtss_venice_c_sd10g65_setup.h"
 #include "./chips/venice/vtss_venice_regs.h"
 #include "vtss_venice_f2df_sd10g65_setup.h"
-ioreg_blk io_var;
+// ioreg_blk io_var;
 #if defined(VTSS_IOREG)
 #undef VTSS_IOREG
 #endif
 
-#define VTSS_IOREG(dev, is32, off)  _ioreg(&io_var, (dev), (is32), (off))
+#define VTSS_IOREG(dev, is32, off)  _ioreg(&vtss_state->io_var, (dev), (is32), (off))
 #if defined(VTSS_IOREG_IX)
 #undef VTSS_IOREG_IX
 #endif
@@ -469,3 +472,4 @@ ioreg_blk io_var;
 
 
 #define VTSS_F_VENICE_GLOBAL32_F2DF_RX_SYNTH_F2DF_CFG_STAT_F2DF_SAMPLE_MODE  VTSS_BIT(1)
+#endif
